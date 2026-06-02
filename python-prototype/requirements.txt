@@ -1,0 +1,4 @@
+PyYAML>=6.0.0
+matplotlib>=3.5.0
+jupyter>=1.1.0
+ipykernel>=6.29.0

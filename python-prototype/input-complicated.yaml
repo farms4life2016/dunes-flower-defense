@@ -13,5 +13,5 @@ instance:
     - [1, 4, 8]
     - [4, 6, 7]
 
-# one possible solution:
-# x1 true, x2 true, x3 false, x4 false, x5 true, x6 true, x7 false, x8 false
+  satisfiable: true
+  certificate: [true, true, false, false, true, true, false, false]

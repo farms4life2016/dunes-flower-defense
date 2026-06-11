@@ -1,9 +1,10 @@
 instance:
   n: 3     # number of variables: x1, x2, ..., xn
-  m: 1     # number of clauses
+  m: 2     # number of clauses
   positive:
     - [1, 2, 3]
-  negative: []
+  negative:
+    - [1, 2, 3]
 
   satisfiable: true
-  certificate: [true, true, false]
+  certificate: [1, 1, 0]

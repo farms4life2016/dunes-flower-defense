@@ -79,6 +79,32 @@ A graph $G=(V,E)$ is \textit{square grid aligned} if it can be drawn on the Cart
     
 \end{itemize}
 
+\subsection{Square Grid Aligned Planar (Rectilinear) 3SAT}
+
+For the incidence graph of Planar 3SAT specifically, the graph is \textit{square grid aligned} if its rectilinear embedding
+can be drawn on the Cartesian Plane with the following restrictions:
+
+\begin{itemize}
+    \item the variable row lies on $y=0$.
+    \item all variables are non-overlapping, horizontal line segments of the form $((v_s, 0), (v_t, 0))$,
+    where $(v_s, 0), (v_t, 0)\in I_{\square}$ and $v_s \leq v_t$.
+    \item all clauses $C$ are non-overlapping, horizontal line segments of the form $((x_s, y_C), (x_t, y_C))$,
+    where $(x_s, y_C), (x_t, y_C)\in I_{\square}$ and $x_s \leq x_t$.
+    \item every edge $e$ between a variable and a clause can be written as an ordered collection of line segments of size $p-1$ of the form:
+    $$e = \{ \left( (x_1, y_1), (x_2, y_2) \right), \left( (x_2, y_2), (x_3, y_3) \right), \dots, \left( (x_{p-1}, y_{p-1}), (x_p, y_p) \right) \}$$
+    In other words, $e$ is a list of pairs of points, with each pair defining the beginning and end of a line segment:
+    \begin{itemize}[label=$\circ$]
+        \item for all $i=1,2,\dots, p$, $(x_i, y_i) \in I_{\square}$.
+        \item for all $j=2,3,\dots, p-1$, $(x_j, y_j) \notin V$.
+        \item given that $v_s = ((v_{u}, 0), (v_{w}, 0))$, then $y_1=0$ and $v_u \leq x_1 \leq v_w$.
+        \item similarly, given that $v_t = ((v_{\alpha}, v_\gamma), (v_{\beta}, v_\gamma))$,
+        then $y_p=v_\gamma$ and $v_\alpha \leq x_p \leq v_\beta$.
+        \item for all $k=1, 2, \dots, p-2$, the second point in the $k$-th pair is the same as the first point in the $(k+1)$-th pair.
+        \item \textbf{Additionally, all line segments must have length 1}, i.e. \newline for all $q=1,2,\dots, p-1$, $(x_q - x_{q+1})^2 + (y_q - y_{q+1})^2 = 1$
+    \end{itemize}
+    
+\end{itemize}
+
 \subsection{Triangle Grid}
 
 This definition is similar to its square counterpart, except we use different sets of lines. \newline
@@ -93,7 +119,7 @@ The $f$ subscript stands for forward-slash (\verb|/|).
 
 Define $L_b$ as the union of all diagonal lines $y = - \rT (x-c_3)$ such that $(x,y) \in \R^2$ and $c_3 \in \Z$:
 $$L_b = \{ (x, y) \in \R^2 : \forall c_3 \in \Z, y = - \rT (x-c_3) \}$$
-The $f$ subscript stands for back-slash (\verb|\|).
+The $b$ subscript stands for back-slash (\verb|\|).
 
 Define the \textit{triangle grid} $G_{\triangle}$ as the following union:
 $$G_{\triangle} = L_s \cup L_f \cup L_b$$
@@ -121,12 +147,37 @@ A graph $G=(V,E)$ is \textit{triangle grid aligned} if it can be drawn on the Ca
         \item for all $k=1, 2, \dots, p-2$, the second point in the $k$-th pair is the same as the first point in the $(k+1)$-th pair.
         \item \textbf{Additionally, all line segments must have length 1}, i.e. \newline for all $q=1,2,\dots, p-1$, $(x_q - x_{q+1})^2 + (y_q - y_{q+1})^2 = 1$
     \end{itemize}
+    
+\end{itemize}
+
+\subsection{Triangle Grid Aligned Planar (Rectilinear) 3SAT}
+
+Again, the incidence graph is a special case. For the incidence graph of Planar 3SAT specifically, the graph is \textit{triangle grid aligned} if it can be drawn on the Cartesian Plane with the following restrictions:
+
+\begin{itemize}
+    \item the variable row lies on $y=0$.
+    \item all variables are non-overlapping, horizontal line segments of the form $((v_s, 0), (v_t, 0))$,
+    where $(v_s, 0), (v_t, 0)\in I_{\triangle}$ and $v_s \leq v_t$.
+    \item all clauses are non-overlapping, horizontal line segments of the form $((x_s, y_C), (x_t, y_C))$,
+    where $(x_s, y_C), (x_t, y_C)\in I_{\triangle}$ and $x_s \leq x_t$.
+    \item every edge $e$ between a variable and a clause can be written as an ordered collection of line segments of size $p-1$ of the form:
+    $$e = \{ \left( (x_1, y_1), (x_2, y_2) \right), \left( (x_2, y_2), (x_3, y_3) \right), \dots, \left( (x_{p-1}, y_{p-1}), (x_p, y_p) \right) \}$$
+    In other words, $e$ is a list of pairs of points, with each pair defining the beginning and end of a line segment:
+    \begin{itemize}[label=$\circ$]
+        \item for all $i=1,2,\dots, p$, $(x_i, y_i) \in I_{\triangle}$.
+        \item for all $j=2,3,\dots, p-1$, $(x_j, y_j) \notin V$.
+        \item given that $v_s = ((v_{u}, 0), (v_{w}, 0))$, then $y_1=0$ and $v_u \leq x_1 \leq v_w$.
+        \item similarly, given that $v_t = ((v_{\alpha}, v_\gamma), (v_{\beta}, v_\gamma))$,
+        then $y_p=v_\gamma$ and $v_\alpha \leq x_p \leq v_\beta$.
+        \item for all $k=1, 2, \dots, p-2$, the second point in the $k$-th pair is the same as the first point in the $(k+1)$-th pair.
+        \item \textbf{Additionally, all line segments must have length 1}, i.e. \newline for all $q=1,2,\dots, p-1$, $(x_q - x_{q+1})^2 + (y_q - y_{q+1})^2 = 1$
+    \end{itemize}
+    
+\end{itemize}
 
 \subsection{Triangle Grid Embedded}
 
 A graph $G=(V,E)$ is \textit{triangle grid embedded} if it is triangle-aligned and $p=2$, meaning every $e \in E$ consists of a single line segment of length 1 directly connecting two vertices.
-    
-\end{itemize}
 
 \section{Data Structures}
 
@@ -180,3 +231,5 @@ Our reduction would still work if the max. in-degree is 3 (verify).
 
 Planar Vertex Cover but the graph $G$ is triangle grid embedded.
 Our reduction would still work if the max. in-degree is 3.
+
+\end{document}

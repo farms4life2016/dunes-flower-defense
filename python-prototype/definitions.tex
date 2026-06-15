@@ -1,0 +1,182 @@
+% =====================================================
+% COMMON COMPLEXITY NOTATION
+% =====================================================
+\newcommand{\NP}{\mathrm{NP}}
+\newcommand{\PClass}{\mathrm{P}}
+\newcommand{\SAT}{\mathrm{SAT}}
+\newcommand{\VC}{\mathrm{VC}}
+\newcommand{\BTD}{\mathrm{BTD}}
+\newcommand{\Z}{\mathbb{Z}}
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\rT}{\sqrt{3}}
+% \newcommand{\root3o2}{\frac{\sqrt{3}}{2}}
+
+% =====================================================
+% TITLE
+% =====================================================
+\title{Bloons Tower Defense is NP-Hard}
+\author{farms4life2016}
+\date{\today}
+
+\setlength{\parindent}{0pt}
+
+\begin{document}
+
+\maketitle
+
+\begin{abstract}
+We prove that a decision version of generalized Bloons Tower Defense is NP-hard via a polynomial-time reduction from Monotone Rectilinear Planar 3-SAT.
+\end{abstract}
+
+\tableofcontents
+
+\newpage
+
+\section{Introduction}
+
+
+\section{Definitions}
+
+Lines can be described as equations, e.g. $L \coloneqq y = mx + b$.
+Lines can also be described as a set of points, e.g. $L = \{ (x,y) \in \R^2 : y=mx+b \}$.
+If we think of lines as sets, then we can union two lines to get a plane with both lines drawn on it, and we can intersect two lines to get the points where both lines intersect.
+
+\subsection{Grid}
+
+We will define a grid $G$ as a set of lines drawn on the Cartesian Plane.
+
+\subsection{Square Grid}
+
+Define $L_h$ as the union of all horizontal lines $y=c_1$ such that $(x,y) \in \R^2$ and $c_1 \in \Z$:
+$$L_h = \{ (x, y) \in \R^2 : \forall c_1 \in \Z, y = c_1 \}$$
+
+Define $L_v$ as the union of all vertical lines $y=c_2$ such that $(x,y) \in \R^2$ and $c_2 \in \Z$:
+$$L_v = \{ (x, y) \in \R^2 : \forall c_2 \in \Z, x = c_2 \}$$
+
+Define the \textit{square grid} $G_{\square}$ as the following union:
+$$G_{\square} = L_h \cup L_v$$
+
+Define the \textit{square grid intersections} $I_{\square}$ as the following intersection:
+$$I_{\square} = L_h \cap L_v$$
+
+\subsection{Square Grid Aligned}
+
+A graph $G=(V,E)$ is \textit{square grid aligned} if it can be drawn on the Cartesian Plane with the following restrictions:
+\begin{itemize}
+    \item $G$ is planar
+    \item for all $v \in V$ where $v = (v_x, v_y)$, $(v_x, v_y) \in I_{\square}$.
+    \item for all $e \in E$ that connects two vertices $v_s, v_t \in V$, $e$ can be written as an ordered collection of line segments of size $p-1$ of the form:
+    $$e = \{ \left( (x_1, y_1), (x_2, y_2) \right), \left( (x_2, y_2), (x_3, y_3) \right), \dots, \left( (x_{p-1}, y_{p-1}), (x_p, y_p) \right) \}$$
+    In other words, $e$ is a list of pairs of points, with each pair defining the beginning and end of a line segment:
+    \begin{itemize}[label=$\circ$]
+        \item for all $i=1,2,\dots, p$, $(x_i, y_i) \in I_{\square}$.
+        \item for all $j=2,3,\dots, p-1$, $(x_j, y_j) \notin V$.
+        \item $v_s = (x_1, y_1)$.
+        \item $v_t = (x_p, y_p)$.
+        \item for all $k=1, 2, \dots, p-2$, the second point in the $k$-th pair is the same as the first point in the $(k+1)$-th pair.
+        \item \textbf{Additionally, all line segments must have length 1}, i.e. \newline for all $q=1,2,\dots, p-1$, $(x_q - x_{q+1})^2 + (y_q - y_{q+1})^2 = 1$
+    \end{itemize}
+    
+\end{itemize}
+
+\subsection{Triangle Grid}
+
+This definition is similar to its square counterpart, except we use different sets of lines. \newline
+
+Define $L_s$ as the union of all horizontal lines $y = \frac{\rT}{2} c_1$ such that $(x,y) \in \R^2$ and $c_1 \in \Z$:
+$$L_s = \{ (x, y) \in \R^2 : \forall c_1 \in \Z, y = c_1 \}$$
+The $s$ subscript refers to the scaling factor of $ \frac{\rT}{2}$ compared to $L_h$.
+
+Define $L_f$ as the union of all diagonal lines $y = \rT (x-c_2)$ such that $(x,y) \in \R^2$ and $c_2 \in \Z$:
+$$L_f = \{ (x, y) \in \R^2 : \forall c_2 \in \Z, y = \rT (x-c_2) \}$$
+The $f$ subscript stands for forward-slash (\verb|/|).
+
+Define $L_b$ as the union of all diagonal lines $y = - \rT (x-c_3)$ such that $(x,y) \in \R^2$ and $c_3 \in \Z$:
+$$L_b = \{ (x, y) \in \R^2 : \forall c_3 \in \Z, y = - \rT (x-c_3) \}$$
+The $f$ subscript stands for back-slash (\verb|\|).
+
+Define the \textit{triangle grid} $G_{\triangle}$ as the following union:
+$$G_{\triangle} = L_s \cup L_f \cup L_b$$
+
+Define the \textit{triangle grid intersections} $I_{\triangle}$ as the following intersection:
+$$I_{\triangle} = L_s \cap L_f \cap L_b$$
+
+\subsection{Triangle Grid Aligned}
+
+This definition is similar to its square counterpart, except we use the triangle-related sets instead of the square-related ones.
+\newline
+
+A graph $G=(V,E)$ is \textit{triangle grid aligned} if it can be drawn on the Cartesian Plane with the following restrictions:
+\begin{itemize}
+    \item $G$ is planar
+    \item for all $v \in V$ where $v = (v_x, v_y)$, $(v_x, v_y) \in I_{\triangle}$.
+    \item for all $e \in E$ that connects two vertices $v_s, v_t \in V$, $e$ can be written as an ordered collection of line segments of size $p-1$ of the form:
+    $$e = \{ \left( (x_1, y_1), (x_2, y_2) \right), \left( (x_2, y_2), (x_3, y_3) \right), \dots, \left( (x_{p-1}, y_{p-1}), (x_p, y_p) \right) \}$$
+    In other words, $e$ is a list of pairs of points, with each pair defining the beginning and end of a line segment:
+    \begin{itemize}[label=$\circ$]
+        \item for all $i=1,2,\dots, p$, $(x_i, y_i) \in I_{\triangle}$.
+        \item for all $j=2,3,\dots, p-1$, $(x_j, y_j) \notin V$.
+        \item $v_s = (x_1, y_1)$.
+        \item $v_t = (x_p, y_p)$.
+        \item for all $k=1, 2, \dots, p-2$, the second point in the $k$-th pair is the same as the first point in the $(k+1)$-th pair.
+        \item \textbf{Additionally, all line segments must have length 1}, i.e. \newline for all $q=1,2,\dots, p-1$, $(x_q - x_{q+1})^2 + (y_q - y_{q+1})^2 = 1$
+    \end{itemize}
+
+\subsection{Triangle Grid Embedded}
+
+A graph $G=(V,E)$ is \textit{triangle grid embedded} if it is triangle-aligned and $p=2$, meaning every $e \in E$ consists of a single line segment of length 1 directly connecting two vertices.
+    
+\end{itemize}
+
+\section{Data Structures}
+
+To avoid the additional computation and inaccuracies associated with floating point numbers,
+we want to store all numbers as integers. We note that in the aforementioned definitions, $G=(V,E)$ can be stored entirely using some collection(s) of points in $I_\square$ or some collection(s) of points in $I_\triangle$ (but not both).
+Thus, we need to find a way to represent each point in $I_\square$ and $I_\triangle$ using only integers.
+
+For $I_\square$, this is easy. Every $(x,y) \in I_{\square}$ satisfies $(x,y) \in \Z^2$, so we can use $\Z^2$ to represent points in $I_\square$.
+
+For $I_\triangle$, we can still use the $\Z^2$. We assume that the solver or verifier does not care about the drawing of the graph, only the data. (This can probably be formally proved using the equivalence/isomorphism of graphs... todo later...).
+From $\Z^2$, we can transform into $I_\triangle$ by first adding $\frac{1}{2}$ to each odd x-coordinate. Then, scale all $y$ coordinates by a factor of $\frac{\rT}{2}$. (TODO: prove why this works, probably using a bijection)
+
+There are probably many other ways of doing this...some of which are easier to prove.
+
+Therefore, we can use $\Z^2$ to represent $G$ in both square and triangle cases.
+
+\section{Decision Problems}
+
+\subsection{Monotone (Rectilinear) Planar 3SAT (MRP3SAT)}
+
+This is a known NP-Complete problem.
+
+Any Planar 3SAT formula has a \textit{rectilinear embedding}, which means you can draw the incidence graph such that
+variables are on a \textit{variable row} as horizontal lines,
+clauses are above or below the variable row as horizontal lines,
+and vertical lines connect clauses and variables if and only if a variable or its negation appears in that clause.
+(This is also a known result.)
+
+Monotone just means that all clauses are either positive or negative, 
+meaning that the clause contains all non-negated variables or all negated variables, respectively.
+Additionally, all positive clauses must be drawn above the variable row, and all negative clauses must be drawn below the variable row.
+
+Importantly, clauses can contain duplicate literals and can only contain at most 3 literals.
+(If every clause only has 3 distinct variables, then the answer is always ``yes'' and we can find a certificate in polytime.
+This is also a known result.)
+
+\subsection{Square Grid Aligned MRP3SAT (SGA MRP3SAT)}
+
+MRP3SAT but the incidence graph $G$ is square grid aligned.
+
+\subsection{Triangle Grid Aligned MRP3SAT 3SAT (TGA MRP3SAT)}
+
+MRP3SAT but the incidence graph $G$ is triangle grid aligned.
+
+\subsection{Triangle Grid Aligned Planar Vertex Cover (TGA PVC)}
+
+Planar Vertex Cover but the graph $G$ is triangle grid aligned.
+Our reduction would still work if the max. in-degree is 3 (verify).
+
+\subsection{Triangle Grid Embedded Planar Vertex Cover (TGE PVC)}
+
+Planar Vertex Cover but the graph $G$ is triangle grid embedded.
+Our reduction would still work if the max. in-degree is 3.

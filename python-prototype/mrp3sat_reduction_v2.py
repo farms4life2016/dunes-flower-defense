@@ -1408,3 +1408,170 @@ tga_graph = build_tga_graph(
 )
 fig, axis = draw_tga_graph(tga_graph)
 plt.show()
+
+# %% [markdown]
+# ## Rounded TGA-MRP3SAT
+
+# %%
+def _tga_connector_segments(
+    x: int,
+    y: int,
+    rounded: bool = False,
+) -> tuple[UnitSegment, ...]:
+    step = 1 if y > 0 else -1
+
+    if not rounded:
+        return tuple(
+            UnitSegment(Point(x, row), Point(x, row + step))
+            for row in range(0, y, step)
+        )
+
+    turn_row = y - step
+
+    segments = [
+        UnitSegment(Point(x, row), Point(x, row + step))
+        for row in range(0, turn_row, step)
+    ]
+    segments.append(UnitSegment(Point(x, turn_row), Point(x + 1, y)))
+
+    return tuple(segments)
+
+
+def _add_rounded_tga_edges_from_queues(
+    queues: dict[int, list[Clause]],
+    x_start: dict[int, int],
+    levels: dict[int, int],
+    direction: int,
+    parity_offset: int,
+    connector_xs_by_clause: dict[int, list[int]],
+    edges: list[GridEdge],
+) -> None:
+    connector_positions: list[tuple[int, Clause, int, int]] = []
+
+    for variable, queue in queues.items():
+        for idx, clause in enumerate(queue):
+            x = x_start[variable] + 2 * idx + parity_offset
+            y = direction * 2 * levels[clause.label]
+
+            connector_xs_by_clause.setdefault(clause.label, []).append(x)
+            connector_positions.append((variable, clause, x, y))
+
+    rounded_x_by_clause = {
+        label: min(xs)
+        for label, xs in connector_xs_by_clause.items()
+    }
+
+    for _, clause, x, y in connector_positions:
+        rounded = (x == rounded_x_by_clause[clause.label])
+        edges.append(GridEdge(
+            segments=_tga_connector_segments(x, y, rounded=rounded),
+        ))
+
+
+# %%
+def build_rounded_tga_graph(
+    instance: MRP3SATInstance,
+    positive_levels: dict[int, int],
+    negative_levels: dict[int, int],
+) -> MRP3SATGraph:
+    pos_queues = _build_queues(instance.positive, positive_levels)
+    neg_queues = _build_queues(instance.negative, negative_levels)
+
+    slot_count = {
+        variable: max(
+            1,
+            len(pos_queues.get(variable, [])),
+            len(neg_queues.get(variable, [])),
+        )
+        for variable in range(1, instance.n + 1)
+    }
+
+    segment_width = {
+        variable: 2 * slot_count[variable]
+        for variable in range(1, instance.n + 1)
+    }
+
+    x_start: dict[int, int] = {}
+    cursor = 0
+
+    for variable in range(1, instance.n + 1):
+        x_start[variable] = cursor
+        cursor += segment_width[variable]
+
+    variables = {
+        variable: VariableSegment(
+            var=variable,
+            x_start=x_start[variable],
+            x_end=x_start[variable] + segment_width[variable] - 1,
+        )
+        for variable in range(1, instance.n + 1)
+    }
+
+    connector_xs_by_clause: dict[int, list[int]] = {}
+    edges: list[GridEdge] = []
+
+    _add_rounded_tga_edges_from_queues(
+        pos_queues,
+        x_start,
+        positive_levels,
+        direction=1,
+        parity_offset=0,
+        connector_xs_by_clause=connector_xs_by_clause,
+        edges=edges,
+    )
+
+    _add_rounded_tga_edges_from_queues(
+        neg_queues,
+        x_start,
+        negative_levels,
+        direction=-1,
+        parity_offset=1,
+        connector_xs_by_clause=connector_xs_by_clause,
+        edges=edges,
+    )
+
+    clauses: dict[int, ClauseSegment] = {}
+
+    for clause in instance.positive:
+        xs = connector_xs_by_clause[clause.label]
+
+        clauses[clause.label] = ClauseSegment(
+            label=clause.label,
+            x_start=min(xs) + 1,
+            x_end=max(xs),
+            y=2 * positive_levels[clause.label],
+            variables=tuple(sorted(clause.variables)),
+        )
+
+    for clause in instance.negative:
+        xs = connector_xs_by_clause[clause.label]
+
+        clauses[clause.label] = ClauseSegment(
+            label=clause.label,
+            x_start=min(xs) + 1,
+            x_end=max(xs),
+            y=-2 * negative_levels[clause.label],
+            variables=tuple(sorted(clause.variables)),
+        )
+
+    return MRP3SATGraph(
+        variables=variables,
+        clauses=clauses,
+        edges=tuple(edges),
+    )
+
+
+# %%
+rounded_tga_graph = build_rounded_tga_graph(
+    mrp3sat_instance,
+    positive_levels,
+    negative_levels,
+)
+fig, axis = draw_tga_graph(rounded_tga_graph)
+axis.set_title("Rounded Triangle-Grid-Aligned Monotone Rectilinear Planar 3SAT")
+plt.show()
+
+# %% [markdown]
+# ## TGA-VC
+# with max degree of 3
+#

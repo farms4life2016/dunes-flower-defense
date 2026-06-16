@@ -222,3 +222,10 @@ __marimo__/
 # image outputs
 *.svg
 *.png
+# unfortunately png also covers the monkey and bloon pngs...
+
+# pdfs of math papers
+*.pdf
+
+/scratchpad
+.jupyter_data

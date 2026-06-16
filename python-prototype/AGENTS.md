@@ -11,17 +11,29 @@ This is not meant to be a hard proof, more like a smoke test to see if this redu
 
 ## Editing Code
 
-**Do not edit IPYNB files directly.** Paste the code in a file and let me copy manually,
-or provide a copy-able code block in your response.
-You can also run small tests if you paste code into a scratch file.
-
+**Do not edit IPYNB files directly.** Only edit the linked `.py` file.
 I will be editing notebooks in the web interface provided by `jupyter notebook`,
 which has its own syncing mechanism with the file system.
 
-You may read IPYNB files as always. However, there may be stale reads due to race conditions and caching
-due to Jupyter's web UI.
+To avoid race conditions, use `jupytext` to sync the `.py` file **BEFORE AND AFTER** you edit:
 
-### Python Conventions
+```bash
+JUPYTER_DATA_DIR=.jupyter_data ./venv/bin/python3 -m jupytext --sync mrp3sat_reduction_v2.ipynb
+```
+
+You may read unlinked IPYNB files as always, otherwise prioritize reading the linked python file since they are slimmer.
+
+### Testing
+
+When writing new code or making large refactors, always *strive* to test your code to confirm behaviour.
+You can run small tests if you paste code into a scratch file (inside `./scratchpad`).
+To avoid repeating code, you can copy stable sections of code from the notebook into the scratchpad
+and import them into your tests. However, the notebook stays heavy and should *never* reference scratchpad files.
+
+Please keep the scratchpad neat. Clean up stale files unless they are truly useful for later.
+Reuse old scratch files instead of deleting and creating new files.
+
+### Installing Packages
 
 There is a current wave of cyber-attacks exploiting the supply-chain.
 Whenever you need to install a new Python package via `pip`, **always** follow security best practices:
@@ -49,6 +61,14 @@ Instead of using raw `python3` and `pip3`, **always** use the `./venv/bin/python
   
 The PDFs are formal papers that prove that certain problems are or are not NP-Complete.
 You *should not* read them, as this will consume too many tokens.
+
+## Version Control
+
+There is a Git repo in the parent folder that pushes to GitHub.
+**Only commit when requested, do not commit otherwise!**
+I must first confirm the behaviour on Jupyter first to verify that the plots look correct.
+Do not create a PR either -- this is a branch for work, not changes.
+The commit style is informal, written by a hobbist programmer. Please check recent commits and follow my style.
 
 ## Other Notes
 

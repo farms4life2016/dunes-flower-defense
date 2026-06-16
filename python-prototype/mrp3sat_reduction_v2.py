@@ -93,6 +93,7 @@
 # %%
 from __future__ import annotations
 
+import math
 import os
 from collections import deque
 from dataclasses import dataclass
@@ -599,7 +600,7 @@ print("All OK!")
 
 # %%
 # ============================================================
-# Data Structures — SGA MRP3SAT Graph
+# Data Structures — Grid-Aligned MRP3SAT Graph
 # ============================================================
 
 from dataclasses import dataclass
@@ -659,7 +660,7 @@ class ClauseSegment:
         return self.variables[2]
 
 @dataclass(frozen=True)
-class SGAMRP3SATGraph:
+class MRP3SATGraph:
     variables: dict[int, VariableSegment]
     clauses: dict[int, ClauseSegment]
     edges: tuple[GridEdge, ...]
@@ -732,8 +733,6 @@ def _add_edges_from_queues(
             start = Point(x, 0)
             end = Point(x, y)
             edges.append(GridEdge(
-                start=start,
-                end=end,
                 segments=_unit_segments_between(start, end),
             ))
 
@@ -765,7 +764,7 @@ def build_sga_graph(
     instance: MRP3SATInstance,
     positive_levels: dict[int, int],
     negative_levels: dict[int, int],
-) -> SGAMRP3SATGraph:
+) -> MRP3SATGraph:
     pos_queues = _build_queues(instance.positive, positive_levels)
     neg_queues = _build_queues(instance.negative, negative_levels)
 
@@ -839,7 +838,7 @@ def build_sga_graph(
             variables=tuple(sorted(clause.variables)),
         )
 
-    return SGAMRP3SATGraph(
+    return MRP3SATGraph(
         variables=variables,
         clauses=clauses,
         edges=tuple(edges),
@@ -860,7 +859,7 @@ _POS_COLOUR = "#2166ac"
 _NEG_COLOUR = "#b2182b"
 _GRIDLINE_COLOUR = "#aaaaaa"
 
-def _graph_bounds(graph: SGAMRP3SATGraph) -> tuple[int, int, int, int]:
+def _graph_bounds(graph: MRP3SATGraph) -> tuple[int, int, int, int]:
     points = []
     for variable in graph.variables.values():
         points.extend([Point(variable.x_start, variable.y), Point(variable.x_end, variable.y)])
@@ -879,8 +878,8 @@ def _graph_bounds(graph: SGAMRP3SATGraph) -> tuple[int, int, int, int]:
     )
 
 
-def draw_sga_graph(graph: SGAMRP3SATGraph, output: Path | str | None = None):
-    """Render an SGAMRP3SATGraph. Returns (fig, axis)."""
+def draw_sga_graph(graph: MRP3SATGraph, output: Path | str | None = None):
+    """Render an MRP3SATGraph on the square grid. Returns (fig, axis)."""
     min_x, max_x, min_y, max_y = _graph_bounds(graph)
     fig_width = max(7.0, (max_x - min_x + 1) * 0.5)
     fig_height = max(4.5, (max_y - min_y + 2) * 0.9)
@@ -973,4 +972,439 @@ fig, axis = draw_sga_graph(sga_graph)
 plt.show()
 
 
+# %% [markdown]
+# ## Alternating SGA-MRP3SAT
+
 # %%
+def _add_alternating_edges_from_queues(
+    queues: dict[int, list[Clause]],
+    x_start: dict[int, int],
+    levels: dict[int, int],
+    direction: int,
+    parity_offset: int,
+    connector_xs_by_clause: dict[int, list[int]],
+    edges: list[GridEdge],
+) -> None:
+    for variable, queue in queues.items():
+        for idx, clause in enumerate(queue):
+            x = x_start[variable] + 2 * idx + parity_offset
+            y = direction * levels[clause.label]
+
+            connector_xs_by_clause.setdefault(clause.label, []).append(x)
+
+            start = Point(x, 0)
+            end = Point(x, y)
+            edges.append(GridEdge(
+                segments=_unit_segments_between(start, end),
+            ))
+
+
+
+# %%
+def build_alternating_sga_graph(
+    instance: MRP3SATInstance,
+    positive_levels: dict[int, int],
+    negative_levels: dict[int, int],
+) -> MRP3SATGraph:
+    pos_queues = _build_queues(instance.positive, positive_levels)
+    neg_queues = _build_queues(instance.negative, negative_levels)
+
+    slot_count = {
+        variable: max(
+            1,
+            len(pos_queues.get(variable, [])),
+            len(neg_queues.get(variable, [])),
+        )
+        for variable in range(1, instance.n + 1)
+    }
+
+    segment_width = {
+        variable: 2 * slot_count[variable]
+        for variable in range(1, instance.n + 1)
+    }
+
+    x_start: dict[int, int] = {}
+    cursor = 0
+
+    for variable in range(1, instance.n + 1):
+        x_start[variable] = cursor
+        cursor += segment_width[variable]
+
+    variables = {
+        variable: VariableSegment(
+            var=variable,
+            x_start=x_start[variable],
+            x_end=x_start[variable] + segment_width[variable] - 1,
+        )
+        for variable in range(1, instance.n + 1)
+    }
+
+    connector_xs_by_clause: dict[int, list[int]] = {}
+    edges: list[GridEdge] = []
+
+    _add_alternating_edges_from_queues(
+        pos_queues,
+        x_start,
+        positive_levels,
+        direction=1,
+        parity_offset=0,
+        connector_xs_by_clause=connector_xs_by_clause,
+        edges=edges,
+    )
+
+    _add_alternating_edges_from_queues(
+        neg_queues,
+        x_start,
+        negative_levels,
+        direction=-1,
+        parity_offset=1,
+        connector_xs_by_clause=connector_xs_by_clause,
+        edges=edges,
+    )
+
+    clauses: dict[int, ClauseSegment] = {}
+
+    for clause in instance.positive:
+        xs = connector_xs_by_clause[clause.label]
+
+        clauses[clause.label] = ClauseSegment(
+            label=clause.label,
+            x_start=min(xs),
+            x_end=max(xs),
+            y=positive_levels[clause.label],
+            variables=tuple(sorted(clause.variables)),
+        )
+
+    for clause in instance.negative:
+        xs = connector_xs_by_clause[clause.label]
+
+        clauses[clause.label] = ClauseSegment(
+            label=clause.label,
+            x_start=min(xs),
+            x_end=max(xs),
+            y=-negative_levels[clause.label],
+            variables=tuple(sorted(clause.variables)),
+        )
+
+    return MRP3SATGraph(
+        variables=variables,
+        clauses=clauses,
+        edges=tuple(edges),
+    )
+
+
+# %%
+alternating_sga_graph = build_alternating_sga_graph(
+    mrp3sat_instance,
+    positive_levels,
+    negative_levels,
+)
+fig, axis = draw_sga_graph(alternating_sga_graph)
+axis.set_title("Alternating Square-Grid-Aligned Monotone Rectilinear Planar 3SAT")
+plt.show()
+
+# %% [markdown]
+# ## (Alternating) TGA-3SAT
+
+# %%
+_TRIANGLE_GRID_STEP = math.sqrt(3) / 2
+
+
+def _triangle_x(point: Point) -> float:
+    return point.x + (0.5 if point.y % 2 else 0.0)
+
+
+def _triangle_y(point: Point) -> float:
+    return point.y * _TRIANGLE_GRID_STEP
+
+
+def _triangle_xy(point: Point) -> tuple[float, float]:
+    return _triangle_x(point), _triangle_y(point)
+
+
+def _add_tga_edges_from_queues(
+    queues: dict[int, list[Clause]],
+    x_start: dict[int, int],
+    levels: dict[int, int],
+    direction: int,
+    parity_offset: int,
+    connector_xs_by_clause: dict[int, list[int]],
+    edges: list[GridEdge],
+) -> None:
+    for variable, queue in queues.items():
+        for idx, clause in enumerate(queue):
+            x = x_start[variable] + 2 * idx + parity_offset
+            y = direction * 2 * levels[clause.label]
+
+            connector_xs_by_clause.setdefault(clause.label, []).append(x)
+
+            step = 1 if y > 0 else -1
+            segments = tuple(
+                UnitSegment(Point(x, row), Point(x, row + step))
+                for row in range(0, y, step)
+            )
+            edges.append(GridEdge(segments=segments))
+
+
+# %%
+def build_tga_graph(
+    instance: MRP3SATInstance,
+    positive_levels: dict[int, int],
+    negative_levels: dict[int, int],
+) -> MRP3SATGraph:
+    pos_queues = _build_queues(instance.positive, positive_levels)
+    neg_queues = _build_queues(instance.negative, negative_levels)
+
+    slot_count = {
+        variable: max(
+            1,
+            len(pos_queues.get(variable, [])),
+            len(neg_queues.get(variable, [])),
+        )
+        for variable in range(1, instance.n + 1)
+    }
+
+    segment_width = {
+        variable: 2 * slot_count[variable]
+        for variable in range(1, instance.n + 1)
+    }
+
+    x_start: dict[int, int] = {}
+    cursor = 0
+
+    for variable in range(1, instance.n + 1):
+        x_start[variable] = cursor
+        cursor += segment_width[variable]
+
+    variables = {
+        variable: VariableSegment(
+            var=variable,
+            x_start=x_start[variable],
+            x_end=x_start[variable] + segment_width[variable] - 1,
+        )
+        for variable in range(1, instance.n + 1)
+    }
+
+    connector_xs_by_clause: dict[int, list[int]] = {}
+    edges: list[GridEdge] = []
+
+    _add_tga_edges_from_queues(
+        pos_queues,
+        x_start,
+        positive_levels,
+        direction=1,
+        parity_offset=0,
+        connector_xs_by_clause=connector_xs_by_clause,
+        edges=edges,
+    )
+
+    _add_tga_edges_from_queues(
+        neg_queues,
+        x_start,
+        negative_levels,
+        direction=-1,
+        parity_offset=1,
+        connector_xs_by_clause=connector_xs_by_clause,
+        edges=edges,
+    )
+
+    clauses: dict[int, ClauseSegment] = {}
+
+    for clause in instance.positive:
+        xs = connector_xs_by_clause[clause.label]
+
+        clauses[clause.label] = ClauseSegment(
+            label=clause.label,
+            x_start=min(xs),
+            x_end=max(xs),
+            y=2 * positive_levels[clause.label],
+            variables=tuple(sorted(clause.variables)),
+        )
+
+    for clause in instance.negative:
+        xs = connector_xs_by_clause[clause.label]
+
+        clauses[clause.label] = ClauseSegment(
+            label=clause.label,
+            x_start=min(xs),
+            x_end=max(xs),
+            y=-2 * negative_levels[clause.label],
+            variables=tuple(sorted(clause.variables)),
+        )
+
+    return MRP3SATGraph(
+        variables=variables,
+        clauses=clauses,
+        edges=tuple(edges),
+    )
+
+
+# %%
+def _triangle_graph_bounds(graph: MRP3SATGraph) -> tuple[float, float, float, float, int, int]:
+    min_x, max_x, min_y, max_y = _graph_bounds(graph)
+    row_min = min_y - 1
+    row_max = max_y + 1
+
+    points = []
+    for x in range(min_x - 1, max_x + 2):
+        for y in range(row_min, row_max + 1):
+            points.append(_triangle_xy(Point(x, y)))
+
+    return (
+        min(x for x, _ in points),
+        max(x for x, _ in points),
+        min(y for _, y in points),
+        max(y for _, y in points),
+        row_min,
+        row_max,
+    )
+
+
+def _draw_triangle_grid(
+    axis,
+    x_min: float,
+    x_max: float,
+    row_min: int,
+    row_max: int,
+    color: str = _GRIDLINE_COLOUR,
+    linewidth: float = 0.6,
+    linestyle: str = "--",
+) -> None:
+    """
+    Draw the three parallel line families of the triangular grid.
+
+    The rendered grid has side length 1:
+    - horizontal rows at y = row * sqrt(3) / 2
+    - slope +sqrt(3) lines where x = a + row / 2
+    - slope -sqrt(3) lines where x = b - row / 2
+    """
+    y_bot = row_min * _TRIANGLE_GRID_STEP
+    y_top = row_max * _TRIANGLE_GRID_STEP
+    kw = dict(color=color, linewidth=linewidth, linestyle=linestyle, zorder=0)
+
+    for row in range(row_min, row_max + 1):
+        axis.axhline(row * _TRIANGLE_GRID_STEP, **kw)
+
+    a_min = math.floor(x_min - row_max / 2) - 1
+    a_max = math.ceil(x_max - row_min / 2) + 1
+    for a in range(a_min, a_max + 1):
+        axis.plot(
+            [a + row_min / 2, a + row_max / 2],
+            [y_bot, y_top],
+            **kw,
+        )
+
+    b_min = math.floor(x_min + row_min / 2) - 1
+    b_max = math.ceil(x_max + row_max / 2) + 1
+    for b in range(b_min, b_max + 1):
+        axis.plot(
+            [b - row_min / 2, b - row_max / 2],
+            [y_bot, y_top],
+            **kw,
+        )
+
+
+def draw_tga_graph(graph: MRP3SATGraph, output: Path | str | None = None):
+    """Render an MRP3SATGraph on the triangle grid. Returns (fig, axis)."""
+    min_i, max_i, _, _ = _graph_bounds(graph)
+    min_x, max_x, min_y, max_y, row_min, row_max = _triangle_graph_bounds(graph)
+    fig_width = max(7.0, (max_x - min_x + 1) * 0.5)
+    fig_height = max(4.5, (max_y - min_y + _TRIANGLE_GRID_STEP) * 0.9)
+    fig, axis = plt.subplots(figsize=(fig_width, fig_height))
+
+    _draw_triangle_grid(axis, min_x, max_x, row_min, row_max)
+
+    axis.axhline(0, color=_VARROW_COLOUR, linewidth=1.2, zorder=1)
+
+    for variable in graph.variables.values():
+        center_y = _triangle_y(Point(0, variable.y))
+        bx = _triangle_x(Point(variable.x_start, variable.y)) - 0.4
+        bw = variable.x_end - variable.x_start + 0.8
+
+        axis.add_patch(FancyBboxPatch(
+            (bx, center_y - _BOX_H / 2),
+            bw,
+            _BOX_H,
+            boxstyle="round,pad=0.02",
+            linewidth=1.2,
+            edgecolor="#222222",
+            facecolor="white",
+            zorder=5,
+        ))
+
+        axis.text(
+            bx + bw / 2,
+            center_y,
+            f"x{variable.var}",
+            ha="center",
+            va="center",
+            fontsize=9,
+            color="#222222",
+            zorder=6,
+        )
+
+    for clause in graph.clauses.values():
+        color = _POS_COLOUR if clause.y > 0 else _NEG_COLOUR
+        start = _triangle_xy(Point(clause.x_start, clause.y))
+        end = _triangle_xy(Point(clause.x_end, clause.y))
+        axis.plot(
+            [start[0], end[0]],
+            [start[1], end[1]],
+            color=color,
+            linewidth=2.4,
+            zorder=3,
+        )
+        axis.text(
+            (start[0] + end[0]) / 2,
+            start[1] + (0.16 if clause.y > 0 else -0.16),
+            _label_str(clause.label),
+            ha="center",
+            va=("bottom" if clause.y > 0 else "top"),
+            fontsize=10,
+            color=color,
+            fontweight="bold",
+        )
+
+    for edge in graph.edges:
+        color = _POS_COLOUR if edge.end.y > 0 else _NEG_COLOUR
+        for segment in edge.segments:
+            start = _triangle_xy(segment.start)
+            end = _triangle_xy(segment.end)
+            axis.plot(
+                [start[0], end[0]],
+                [start[1], end[1]],
+                color=color,
+                linewidth=1.2,
+                alpha=0.8,
+                zorder=2,
+            )
+        end = _triangle_xy(edge.end)
+        axis.scatter([end[0]], [end[1]], color=color, s=18, zorder=4)
+
+    axis.set_aspect("equal", adjustable="box")
+    axis.set_xlim(min_x, max_x)
+    axis.set_ylim(min_y, max_y)
+    axis.set_yticks([row * _TRIANGLE_GRID_STEP for row in range(row_min, row_max + 1)])
+    axis.set_yticklabels([str(row) for row in range(row_min, row_max + 1)], fontsize=7)
+    axis.tick_params(axis="x", bottom=False, labelbottom=False)
+    axis.tick_params(axis="y", left=False, length=0, labelleft=True)
+    axis.set_title("Triangle-Grid-Aligned Monotone Rectilinear Planar 3SAT")
+    for spine in axis.spines.values():
+        spine.set_visible(False)
+    fig.tight_layout()
+
+    if output is not None:
+        fig.savefig(Path(output), bbox_inches="tight")
+        print(f"Saved to {output}")
+
+    return fig, axis
+
+
+# %%
+tga_graph = build_tga_graph(
+    mrp3sat_instance,
+    positive_levels,
+    negative_levels,
+)
+fig, axis = draw_tga_graph(tga_graph)
+plt.show()

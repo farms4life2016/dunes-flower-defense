@@ -516,7 +516,7 @@ def compute_clause_levels(
 # %%
 def validate_instance(
     instance: MRP3SATInstance,
-) -> tuple[dict[str, int], dict[int, int]]:
+) -> tuple[dict[int, int], dict[int, int]]:
 
     verify_certificate(instance)
 
@@ -618,9 +618,15 @@ class UnitSegment:
 
 @dataclass(frozen=True)
 class GridEdge:
-    start: Point
-    end: Point
     segments: tuple[UnitSegment, ...]
+
+    @property
+    def start(self) -> Point:
+        return self.segments[0].start
+
+    @property
+    def end(self) -> Point:
+        return self.segments[-1].end
 
 # PR3SAT data structs
 @dataclass(frozen=True)
@@ -639,6 +645,18 @@ class ClauseSegment:
     variables: tuple[int, int, int]
     # connector_xs: tuple[int, int, int]
     # i know it's inefficient for straight lines, but we should use GridEdge
+
+    @property
+    def left(self) -> int:
+        return self.variables[0]
+
+    @property
+    def middle(self) -> int:
+        return self.variables[1]
+
+    @property
+    def right(self) -> int:
+        return self.variables[2]
 
 @dataclass(frozen=True)
 class SGAMRP3SATGraph:
@@ -829,7 +847,7 @@ def build_sga_graph(
 
 # %%
 # ============================================================
-# Matplotlib Renderer  (reads only from SGALayout)
+# Matplotlib Renderer
 # ============================================================
 
 

@@ -629,6 +629,47 @@ class GridEdge:
     def end(self) -> Point:
         return self.segments[-1].end
 
+
+LEFT = 0
+MIDDLE = 1
+RIGHT = 2
+
+
+@dataclass(frozen=True)
+class ConnectorMetadata:
+    clause_label: int
+    variable: int
+    slot: int  # 0 for left, 1 for middle, 2 for right. same index as ClauseSegment.variables
+
+@dataclass(frozen=True)
+class ConnectorEdge:
+    metadata: ConnectorMetadata
+    edge: GridEdge
+
+    @property
+    def clause_label(self) -> int:
+        return self.metadata.clause_label
+
+    @property
+    def variable(self) -> int:
+        return self.metadata.variable
+
+    @property
+    def slot(self) -> int:
+        return self.metadata.slot
+
+    @property
+    def segments(self) -> tuple[UnitSegment, ...]:
+        return self.edge.segments
+
+    @property
+    def start(self) -> Point:
+        return self.edge.start
+
+    @property
+    def end(self) -> Point:
+        return self.edge.end
+
 # PR3SAT data structs
 @dataclass(frozen=True)
 class VariableSegment:
@@ -663,7 +704,7 @@ class ClauseSegment:
 class MRP3SATGraph:
     variables: dict[int, VariableSegment]
     clauses: dict[int, ClauseSegment]
-    edges: tuple[GridEdge, ...]
+    edges: tuple[ConnectorEdge, ...]
 
 
 
@@ -675,7 +716,7 @@ class MRP3SATGraph:
 def _build_queues(
     clauses: tuple[Clause, ...],
     levels: dict[int, int],
-) -> dict[int, list[Clause]]:
+) -> dict[int, list[ConnectorMetadata]]:
     sorted_clauses = sorted(clauses, key=lambda clause: (levels[clause.label], clause.label))
 
     all_vars = {variable for clause in clauses for variable in clause.variables}
@@ -688,27 +729,27 @@ def _build_queues(
 
         if L == R:
             # all three variables are the same
-            lefty[R].append(clause)
-            lefty[R].append(clause)
-            lefty[R].append(clause)
+            lefty[R].append(ConnectorMetadata(clause.label, R, LEFT))
+            lefty[R].append(ConnectorMetadata(clause.label, R, MIDDLE))
+            lefty[R].append(ConnectorMetadata(clause.label, R, RIGHT))
 
         elif L == M:
             # first two variables are the same
-            righty[L].insert(0, clause)
-            righty[L].insert(0, clause)
-            lefty[R].append(clause)
+            righty[L].insert(0, ConnectorMetadata(clause.label, L, MIDDLE))
+            righty[L].insert(0, ConnectorMetadata(clause.label, L, LEFT))
+            lefty[R].append(ConnectorMetadata(clause.label, R, RIGHT))
 
         elif M == R:
             # last two variables are the same
-            righty[L].insert(0, clause)
-            lefty[R].append(clause)
-            lefty[R].append(clause)
+            righty[L].insert(0, ConnectorMetadata(clause.label, L, LEFT))
+            lefty[R].append(ConnectorMetadata(clause.label, R, MIDDLE))
+            lefty[R].append(ConnectorMetadata(clause.label, R, RIGHT))
 
         else:
             # all variables are distinct
-            righty[L].insert(0, clause)
-            middle[M].append(clause)
-            lefty[R].append(clause)
+            righty[L].insert(0, ConnectorMetadata(clause.label, L, LEFT))
+            middle[M].append(ConnectorMetadata(clause.label, M, MIDDLE))
+            lefty[R].append(ConnectorMetadata(clause.label, R, RIGHT))
 
     return {
         variable: lefty[variable] + middle[variable] + righty[variable]
@@ -716,24 +757,29 @@ def _build_queues(
     }
     
 def _add_edges_from_queues(
-    queues: dict[int, list[Clause]],
+    queues: dict[int, list[ConnectorMetadata]],
     x_start: dict[int, int],
     levels: dict[int, int],
     direction: int,
     connector_xs_by_clause: dict[int, list[int]],
-    edges: list[GridEdge],
+    edges: list[ConnectorEdge],
 ) -> None:
     for variable, queue in queues.items():
-        for idx, clause in enumerate(queue):
+        for idx, metadata in enumerate(queue):
+            if metadata.variable != variable:
+                raise ValueError(
+                    f"Connector for x{metadata.variable} found in x{variable} queue."
+                )
             x = x_start[variable] + idx
-            y = direction * levels[clause.label]
+            y = direction * levels[metadata.clause_label]
 
-            connector_xs_by_clause.setdefault(clause.label, []).append(x)
+            connector_xs_by_clause.setdefault(metadata.clause_label, []).append(x)
 
             start = Point(x, 0)
             end = Point(x, y)
-            edges.append(GridEdge(
-                segments=_unit_segments_between(start, end),
+            edges.append(ConnectorEdge(
+                metadata=metadata,
+                edge=GridEdge(segments=_unit_segments_between(start, end)),
             ))
 
 def _unit_segments_between(start: Point, end: Point) -> tuple[UnitSegment, ...]:
@@ -794,7 +840,7 @@ def build_sga_graph(
     }
 
     connector_xs_by_clause: dict[int, list[int]] = {}
-    edges: list[GridEdge] = []
+    edges: list[ConnectorEdge] = []
 
     _add_edges_from_queues(
         pos_queues,
@@ -977,25 +1023,30 @@ plt.show()
 
 # %%
 def _add_alternating_edges_from_queues(
-    queues: dict[int, list[Clause]],
+    queues: dict[int, list[ConnectorMetadata]],
     x_start: dict[int, int],
     levels: dict[int, int],
     direction: int,
     parity_offset: int,
     connector_xs_by_clause: dict[int, list[int]],
-    edges: list[GridEdge],
+    edges: list[ConnectorEdge],
 ) -> None:
     for variable, queue in queues.items():
-        for idx, clause in enumerate(queue):
+        for idx, metadata in enumerate(queue):
+            if metadata.variable != variable:
+                raise ValueError(
+                    f"Connector for x{metadata.variable} found in x{variable} queue."
+                )
             x = x_start[variable] + 2 * idx + parity_offset
-            y = direction * levels[clause.label]
+            y = direction * levels[metadata.clause_label]
 
-            connector_xs_by_clause.setdefault(clause.label, []).append(x)
+            connector_xs_by_clause.setdefault(metadata.clause_label, []).append(x)
 
             start = Point(x, 0)
             end = Point(x, y)
-            edges.append(GridEdge(
-                segments=_unit_segments_between(start, end),
+            edges.append(ConnectorEdge(
+                metadata=metadata,
+                edge=GridEdge(segments=_unit_segments_between(start, end)),
             ))
 
 
@@ -1040,7 +1091,7 @@ def build_alternating_sga_graph(
     }
 
     connector_xs_by_clause: dict[int, list[int]] = {}
-    edges: list[GridEdge] = []
+    edges: list[ConnectorEdge] = []
 
     _add_alternating_edges_from_queues(
         pos_queues,
@@ -1123,27 +1174,34 @@ def _triangle_xy(point: Point) -> tuple[float, float]:
 
 
 def _add_tga_edges_from_queues(
-    queues: dict[int, list[Clause]],
+    queues: dict[int, list[ConnectorMetadata]],
     x_start: dict[int, int],
     levels: dict[int, int],
     direction: int,
     parity_offset: int,
     connector_xs_by_clause: dict[int, list[int]],
-    edges: list[GridEdge],
+    edges: list[ConnectorEdge],
 ) -> None:
     for variable, queue in queues.items():
-        for idx, clause in enumerate(queue):
+        for idx, metadata in enumerate(queue):
+            if metadata.variable != variable:
+                raise ValueError(
+                    f"Connector for x{metadata.variable} found in x{variable} queue."
+                )
             x = x_start[variable] + 2 * idx + parity_offset
-            y = direction * 2 * levels[clause.label]
+            y = direction * 2 * levels[metadata.clause_label]
 
-            connector_xs_by_clause.setdefault(clause.label, []).append(x)
+            connector_xs_by_clause.setdefault(metadata.clause_label, []).append(x)
 
             step = 1 if y > 0 else -1
             segments = tuple(
                 UnitSegment(Point(x, row), Point(x, row + step))
                 for row in range(0, y, step)
             )
-            edges.append(GridEdge(segments=segments))
+            edges.append(ConnectorEdge(
+                metadata=metadata,
+                edge=GridEdge(segments=segments),
+            ))
 
 
 # %%
@@ -1186,7 +1244,7 @@ def build_tga_graph(
     }
 
     connector_xs_by_clause: dict[int, list[int]] = {}
-    edges: list[GridEdge] = []
+    edges: list[ConnectorEdge] = []
 
     _add_tga_edges_from_queues(
         pos_queues,
@@ -1413,6 +1471,93 @@ plt.show()
 # ## Rounded TGA-MRP3SAT
 
 # %%
+
+def _copy_grid_edge(edge: GridEdge) -> GridEdge:
+    return GridEdge(
+        segments=tuple(
+            UnitSegment(
+                Point(segment.start.x, segment.start.y),
+                Point(segment.end.x, segment.end.y),
+            )
+            for segment in edge.segments
+        ),
+    )
+
+
+def _copy_connector_metadata(metadata: ConnectorMetadata) -> ConnectorMetadata:
+    return ConnectorMetadata(
+        clause_label=metadata.clause_label,
+        variable=metadata.variable,
+        slot=metadata.slot,
+    )
+
+
+def _copy_connector_edge(connector: ConnectorEdge) -> ConnectorEdge:
+    return ConnectorEdge(
+        metadata=_copy_connector_metadata(connector.metadata),
+        edge=_copy_grid_edge(connector.edge),
+    )
+
+
+def _round_left_connector(connector: ConnectorEdge) -> ConnectorEdge:
+    if connector.slot != LEFT:
+        return _copy_connector_edge(connector)
+
+    if not connector.segments:
+        raise ValueError(
+            f"Left connector for {_label_str(connector.clause_label)} has no segments."
+        )
+
+    segments = list(_copy_grid_edge(connector.edge).segments)
+    last_segment = segments[-1]
+    segments[-1] = UnitSegment(
+        start=last_segment.start,
+        end=Point(last_segment.end.x + 1, last_segment.end.y),
+    )
+
+    return ConnectorEdge(
+        metadata=_copy_connector_metadata(connector.metadata),
+        edge=GridEdge(segments=tuple(segments)),
+    )
+
+
+def build_rounded_tga_graph(graph: MRP3SATGraph) -> MRP3SATGraph:
+    variables = {
+        variable: VariableSegment(
+            var=segment.var,
+            x_start=segment.x_start,
+            x_end=segment.x_end,
+            y=segment.y,
+        )
+        for variable, segment in graph.variables.items()
+    }
+
+    clauses = {
+        label: ClauseSegment(
+            label=clause.label,
+            x_start=clause.x_start + 1,
+            x_end=clause.x_end,
+            y=clause.y,
+            variables=clause.variables,
+        )
+        for label, clause in graph.clauses.items()
+    }
+
+    edges = tuple(
+        _round_left_connector(edge)
+        for edge in graph.edges
+    )
+
+    return MRP3SATGraph(
+        variables=variables,
+        clauses=clauses,
+        edges=edges,
+    )
+
+
+
+# %%
+## UNUSED OLD METHODS
 def _tga_connector_segments(
     x: int,
     y: int,
@@ -1437,39 +1582,39 @@ def _tga_connector_segments(
     return tuple(segments)
 
 
-def _add_rounded_tga_edges_from_queues(
-    queues: dict[int, list[Clause]],
+def _add_rebuilt_rounded_tga_edges_from_queues(
+    queues: dict[int, list[ConnectorMetadata]],
     x_start: dict[int, int],
     levels: dict[int, int],
     direction: int,
     parity_offset: int,
     connector_xs_by_clause: dict[int, list[int]],
-    edges: list[GridEdge],
+    edges: list[ConnectorEdge],
 ) -> None:
-    connector_positions: list[tuple[int, Clause, int, int]] = []
-
     for variable, queue in queues.items():
-        for idx, clause in enumerate(queue):
+        for idx, metadata in enumerate(queue):
+            if metadata.variable != variable:
+                raise ValueError(
+                    f"Connector for x{metadata.variable} found in x{variable} queue."
+                )
             x = x_start[variable] + 2 * idx + parity_offset
-            y = direction * 2 * levels[clause.label]
+            y = direction * 2 * levels[metadata.clause_label]
 
-            connector_xs_by_clause.setdefault(clause.label, []).append(x)
-            connector_positions.append((variable, clause, x, y))
+            connector_xs_by_clause.setdefault(metadata.clause_label, []).append(x)
 
-    rounded_x_by_clause = {
-        label: min(xs)
-        for label, xs in connector_xs_by_clause.items()
-    }
+            edges.append(ConnectorEdge(
+                metadata=metadata,
+                edge=GridEdge(
+                    segments=_tga_connector_segments(
+                        x,
+                        y,
+                        rounded=(metadata.slot == LEFT),
+                    ),
+                ),
+            ))
 
-    for _, clause, x, y in connector_positions:
-        rounded = (x == rounded_x_by_clause[clause.label])
-        edges.append(GridEdge(
-            segments=_tga_connector_segments(x, y, rounded=rounded),
-        ))
 
-
-# %%
-def build_rounded_tga_graph(
+def rebuild_rounded_tga_graph_from_instance(
     instance: MRP3SATInstance,
     positive_levels: dict[int, int],
     negative_levels: dict[int, int],
@@ -1508,9 +1653,9 @@ def build_rounded_tga_graph(
     }
 
     connector_xs_by_clause: dict[int, list[int]] = {}
-    edges: list[GridEdge] = []
+    edges: list[ConnectorEdge] = []
 
-    _add_rounded_tga_edges_from_queues(
+    _add_rebuilt_rounded_tga_edges_from_queues(
         pos_queues,
         x_start,
         positive_levels,
@@ -1520,7 +1665,7 @@ def build_rounded_tga_graph(
         edges=edges,
     )
 
-    _add_rounded_tga_edges_from_queues(
+    _add_rebuilt_rounded_tga_edges_from_queues(
         neg_queues,
         x_start,
         negative_levels,
@@ -1562,16 +1707,9 @@ def build_rounded_tga_graph(
 
 
 # %%
-rounded_tga_graph = build_rounded_tga_graph(
-    mrp3sat_instance,
-    positive_levels,
-    negative_levels,
-)
+rounded_tga_graph = build_rounded_tga_graph(tga_graph)
 fig, axis = draw_tga_graph(rounded_tga_graph)
 axis.set_title("Rounded Triangle-Grid-Aligned Monotone Rectilinear Planar 3SAT")
 plt.show()
 
-# %% [markdown]
-# ## TGA-VC
-# with max degree of 3
-#
+# %%

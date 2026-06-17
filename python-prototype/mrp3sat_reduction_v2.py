@@ -1471,7 +1471,6 @@ plt.show()
 # ## Rounded TGA-MRP3SAT
 
 # %%
-
 def _copy_grid_edge(edge: GridEdge) -> GridEdge:
     return GridEdge(
         segments=tuple(
@@ -1521,6 +1520,8 @@ def _round_left_connector(connector: ConnectorEdge) -> ConnectorEdge:
     )
 
 
+
+# %%
 def build_rounded_tga_graph(graph: MRP3SATGraph) -> MRP3SATGraph:
     variables = {
         variable: VariableSegment(
@@ -1554,156 +1555,6 @@ def build_rounded_tga_graph(graph: MRP3SATGraph) -> MRP3SATGraph:
         edges=edges,
     )
 
-
-
-# %%
-## UNUSED OLD METHODS
-def _tga_connector_segments(
-    x: int,
-    y: int,
-    rounded: bool = False,
-) -> tuple[UnitSegment, ...]:
-    step = 1 if y > 0 else -1
-
-    if not rounded:
-        return tuple(
-            UnitSegment(Point(x, row), Point(x, row + step))
-            for row in range(0, y, step)
-        )
-
-    turn_row = y - step
-
-    segments = [
-        UnitSegment(Point(x, row), Point(x, row + step))
-        for row in range(0, turn_row, step)
-    ]
-    segments.append(UnitSegment(Point(x, turn_row), Point(x + 1, y)))
-
-    return tuple(segments)
-
-
-def _add_rebuilt_rounded_tga_edges_from_queues(
-    queues: dict[int, list[ConnectorMetadata]],
-    x_start: dict[int, int],
-    levels: dict[int, int],
-    direction: int,
-    parity_offset: int,
-    connector_xs_by_clause: dict[int, list[int]],
-    edges: list[ConnectorEdge],
-) -> None:
-    for variable, queue in queues.items():
-        for idx, metadata in enumerate(queue):
-            if metadata.variable != variable:
-                raise ValueError(
-                    f"Connector for x{metadata.variable} found in x{variable} queue."
-                )
-            x = x_start[variable] + 2 * idx + parity_offset
-            y = direction * 2 * levels[metadata.clause_label]
-
-            connector_xs_by_clause.setdefault(metadata.clause_label, []).append(x)
-
-            edges.append(ConnectorEdge(
-                metadata=metadata,
-                edge=GridEdge(
-                    segments=_tga_connector_segments(
-                        x,
-                        y,
-                        rounded=(metadata.slot == LEFT),
-                    ),
-                ),
-            ))
-
-
-def rebuild_rounded_tga_graph_from_instance(
-    instance: MRP3SATInstance,
-    positive_levels: dict[int, int],
-    negative_levels: dict[int, int],
-) -> MRP3SATGraph:
-    pos_queues = _build_queues(instance.positive, positive_levels)
-    neg_queues = _build_queues(instance.negative, negative_levels)
-
-    slot_count = {
-        variable: max(
-            1,
-            len(pos_queues.get(variable, [])),
-            len(neg_queues.get(variable, [])),
-        )
-        for variable in range(1, instance.n + 1)
-    }
-
-    segment_width = {
-        variable: 2 * slot_count[variable]
-        for variable in range(1, instance.n + 1)
-    }
-
-    x_start: dict[int, int] = {}
-    cursor = 0
-
-    for variable in range(1, instance.n + 1):
-        x_start[variable] = cursor
-        cursor += segment_width[variable]
-
-    variables = {
-        variable: VariableSegment(
-            var=variable,
-            x_start=x_start[variable],
-            x_end=x_start[variable] + segment_width[variable] - 1,
-        )
-        for variable in range(1, instance.n + 1)
-    }
-
-    connector_xs_by_clause: dict[int, list[int]] = {}
-    edges: list[ConnectorEdge] = []
-
-    _add_rebuilt_rounded_tga_edges_from_queues(
-        pos_queues,
-        x_start,
-        positive_levels,
-        direction=1,
-        parity_offset=0,
-        connector_xs_by_clause=connector_xs_by_clause,
-        edges=edges,
-    )
-
-    _add_rebuilt_rounded_tga_edges_from_queues(
-        neg_queues,
-        x_start,
-        negative_levels,
-        direction=-1,
-        parity_offset=1,
-        connector_xs_by_clause=connector_xs_by_clause,
-        edges=edges,
-    )
-
-    clauses: dict[int, ClauseSegment] = {}
-
-    for clause in instance.positive:
-        xs = connector_xs_by_clause[clause.label]
-
-        clauses[clause.label] = ClauseSegment(
-            label=clause.label,
-            x_start=min(xs) + 1,
-            x_end=max(xs),
-            y=2 * positive_levels[clause.label],
-            variables=tuple(sorted(clause.variables)),
-        )
-
-    for clause in instance.negative:
-        xs = connector_xs_by_clause[clause.label]
-
-        clauses[clause.label] = ClauseSegment(
-            label=clause.label,
-            x_start=min(xs) + 1,
-            x_end=max(xs),
-            y=-2 * negative_levels[clause.label],
-            variables=tuple(sorted(clause.variables)),
-        )
-
-    return MRP3SATGraph(
-        variables=variables,
-        clauses=clauses,
-        edges=tuple(edges),
-    )
 
 
 # %%

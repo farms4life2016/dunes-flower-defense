@@ -51,16 +51,16 @@
 # ## Reduction Notes
 #
 # - each problem (except BTD) is in NP because they are just restricted versions of 3SAT and VC, which are in NP.
-# - the only odd numbers we should see is the three nodes in the triangle of the triple-OR gadget for VC.
-#   everything else (wire gadget, variable gadget) should have an **even** number of nodes.
+# - the only odd numbers we should see is the three vertices in the triangle of the triple-OR gadget for VC.
+#   everything else (wire gadget, variable gadget) should have an **even** number of vertices.
 #   **This is crucial for the reduction!!!**
 #   - the gap between variables should be zero or some even number on the square/triangle grid
-#   - the number of nodes between the variable node and the triple-OR gadget should be an even number (not counting either endpoint)
-# - evenness is important for bipartite colouring: both colourings are the same size, so we use up the same number of cover nodes (from k) no matter which bipartition we pick.
-# - also useful for calculating the limit "k", k = ((total number of nodes) - (3m)) / 2 + (2m)
-#   - there are m number of triple-OR gadgets, which are all 3-node triangles
-#   - after subtracting, a bunch of even bipartite trees remain. colouring each takes exactly half of the remainging nodes thanks to evenness.
-#   - then add back 2 nodes per triangle since it takes at minimum 2 nodes to cover a triangle
+#   - the number of vertices between the variable vertex and the triple-OR gadget should be an even number (not counting either endpoint)
+# - evenness is important for bipartite colouring: both colourings are the same size, so we use up the same number of cover vertices (from k) no matter which bipartition we pick.
+# - also useful for calculating the limit "k", k = ((total number of vertices) - (3m)) / 2 + (2m)
+#   - there are m number of triple-OR gadgets, which are all 3-vertex triangles
+#   - after subtracting, a bunch of even bipartite trees remain. colouring each takes exactly half of the remainging vertices thanks to evenness.
+#   - then add back 2 vertices per triangle since it takes at minimum 2 vertices to cover a triangle
 # - to convert MRP3SAT yes-certificates into BTD yes-certificates, follow the same steps as converting 3SAT certificates into VC certificates.
 #   Just run an additional BFS to propagate the bipartite colouring from the variable row to the triple-OR gadget.
 # - the resulting TGE-PVC instance will have max degree of 3. Not sure if this is useful or easily provable.
@@ -1588,7 +1588,7 @@ class ClauseGadget:
 
 
 @dataclass(frozen=True)
-class ConnectorGadget:
+class TGAConnectorGadget:
     clause_label: int
     variable: int
     slot: int
@@ -1596,10 +1596,10 @@ class ConnectorGadget:
 
 
 @dataclass(frozen=True)
-class PVCGraph:
+class TGAPVCGraph:
     variable_gadgets: dict[int, VariableGadget]
     clause_gadgets: dict[int, ClauseGadget]
-    connector_gadgets: tuple[ConnectorGadget, ...]
+    connector_gadgets: tuple[TGAConnectorGadget, ...]
     k: int  # can we find a vertex cover of size k?
 
 
@@ -1690,28 +1690,28 @@ def _connectors_by_clause_and_slot(
 # %%
 # CONVERTER
 
-def convert_rounded_tga_to_pvc(graph: MRP3SATGraph) -> PVCGraph:
+def convert_rounded_tga_to_pvc(graph: MRP3SATGraph) -> TGAPVCGraph:
     variable_gadgets: dict[int, VariableGadget] = {}
 
     for variable in graph.variables.values():
-        nodes = tuple(
+        vertices = tuple(
             Point(x, variable.y)
             for x in range(variable.x_start, variable.x_end + 1)
         )
         edges = tuple(
-            _single_segment_edge(nodes[i], nodes[i + 1])
-            for i in range(len(nodes) - 1)
+            _single_segment_edge(vertices[i], vertices[i + 1])
+            for i in range(len(vertices) - 1)
         )
         variable_gadgets[variable.var] = VariableGadget(
             variable=variable.var,
-            verticies=nodes,
+            verticies=vertices,
             edges=edges,
         )
 
     connectors_by_clause = _connectors_by_clause_and_slot(graph)
 
     clause_gadgets: dict[int, ClauseGadget] = {}
-    connector_gadgets: list[ConnectorGadget] = []
+    connector_gadgets: list[TGAConnectorGadget] = []
 
     for clause_label, occurrence_by_slot in sorted(connectors_by_clause.items()):
         left_occurrence = occurrence_by_slot[LEFT]
@@ -1748,20 +1748,20 @@ def convert_rounded_tga_to_pvc(graph: MRP3SATGraph) -> PVCGraph:
             else:
                 connector_edge = _connector_edge_to_corner(occurrence.edge, corner)
 
-            connector_gadgets.append(ConnectorGadget(
+            connector_gadgets.append(TGAConnectorGadget(
                 clause_label=occurrence.clause_label,
                 variable=occurrence.variable,
                 slot=occurrence.slot,
                 edge=connector_edge,
             ))
 
-    variable_node_count = sum(
+    variable_vertex_count = sum(
         len(gadget.verticies)
         for gadget in variable_gadgets.values()
     )
-    k = variable_node_count // 2 + 2 * len(clause_gadgets)
+    k = variable_vertex_count // 2 + 2 * len(clause_gadgets)
 
-    return PVCGraph(
+    return TGAPVCGraph(
         variable_gadgets=variable_gadgets,
         clause_gadgets=clause_gadgets,
         connector_gadgets=tuple(connector_gadgets),
@@ -1774,8 +1774,8 @@ def convert_rounded_tga_to_pvc(graph: MRP3SATGraph) -> PVCGraph:
 # TEXT OUTPUT
 
 
-def summarize_tga_pvc_graph(graph: PVCGraph) -> None:
-    variable_node_count = sum(
+def summarize_tga_pvc_graph(graph: TGAPVCGraph) -> None:
+    variable_vertex_count = sum(
         len(gadget.verticies)
         for gadget in graph.variable_gadgets.values()
     )
@@ -1796,7 +1796,7 @@ def summarize_tga_pvc_graph(graph: PVCGraph) -> None:
         if len(gadget.verticies) % 2 != 0
     ]
     if odd_variables:
-        warnings.append(f"odd variable gadget node counts: {odd_variables}")
+        warnings.append(f"odd variable gadget vertex counts: {odd_variables}")
 
     malformed_clauses = [
         _label_str(gadget.label)
@@ -1818,7 +1818,7 @@ def summarize_tga_pvc_graph(graph: PVCGraph) -> None:
     print(
         "TGA-PVC: "
         f"{len(graph.variable_gadgets)} variable gadgets, "
-        f"{variable_node_count} variable nodes, "
+        f"{variable_vertex_count} variable vertices, "
         f"{variable_edge_count} variable edges, "
         f"{len(graph.clause_gadgets)} clause gadgets, "
         f"{clause_edge_count} clause edges, "
@@ -1838,7 +1838,7 @@ def summarize_tga_pvc_graph(graph: PVCGraph) -> None:
 # %%
 # DRAWING
 
-def _tga_pvc_bounds(graph: PVCGraph) -> tuple[float, float, float, float, int, int]:
+def _tga_pvc_bounds(graph: TGAPVCGraph) -> tuple[float, float, float, float, int, int]:
     points: list[Point] = []
 
     for gadget in graph.variable_gadgets.values():
@@ -1863,7 +1863,7 @@ def _tga_pvc_bounds(graph: PVCGraph) -> tuple[float, float, float, float, int, i
     )
 
 
-def _draw_pvc_node(
+def _draw_pvc_vertex(
     axis,
     point: Point,
     *,
@@ -1893,7 +1893,7 @@ def _draw_pvc_node(
         )
 
 
-def draw_tga_pvc_graph(graph: PVCGraph, output: Path | str | None = None):
+def draw_tga_pvc_graph(graph: TGAPVCGraph, output: Path | str | None = None):
     min_x, max_x, min_y, max_y, row_min, row_max = _tga_pvc_bounds(graph)
     fig_width = max(7.0, (max_x - min_x + 1) * 0.5)
     fig_height = max(4.5, (max_y - min_y + _TRIANGLE_GRID_STEP) * 0.9)
@@ -1928,10 +1928,10 @@ def draw_tga_pvc_graph(graph: PVCGraph, output: Path | str | None = None):
                 zorder=3,
             )
 
-        for index, node in enumerate(gadget.verticies):
-            _draw_pvc_node(
+        for index, vertex in enumerate(gadget.verticies):
+            _draw_pvc_vertex(
                 axis,
-                node,
+                vertex,
                 color="#222222",
                 filled=(index % 2 == 0),
                 size=42,
@@ -1966,7 +1966,7 @@ def draw_tga_pvc_graph(graph: PVCGraph, output: Path | str | None = None):
 
         corners = (gadget.left, gadget.middle, gadget.right)
         for corner in corners:
-            _draw_pvc_node(
+            _draw_pvc_vertex(
                 axis,
                 corner,
                 color=color,
@@ -2012,6 +2012,357 @@ def draw_tga_pvc_graph(graph: PVCGraph, output: Path | str | None = None):
 tga_pvc_graph = convert_rounded_tga_to_pvc(rounded_tga_graph)
 summarize_tga_pvc_graph(tga_pvc_graph)
 fig, axis = draw_tga_pvc_graph(tga_pvc_graph)
+plt.show()
+
+# %% [markdown]
+# ## TGE-PVC
+# with max degree 3
+
+# %%
+# GRAPH DATA STRUCTURES
+
+@dataclass(frozen=True)
+class TGEConnectorGadget:
+    clause_label: int
+    variable: int
+    slot: int
+    verticies: tuple[Point, ...]
+    edges: tuple[GridEdge, ...]
+
+
+@dataclass(frozen=True)
+class TGEPVCGraph:
+    variable_gadgets: dict[int, VariableGadget]
+    clause_gadgets: dict[int, ClauseGadget]
+    connector_gadgets: tuple[TGEConnectorGadget, ...]
+    k: int  # can we find a vertex cover of size k?
+
+
+
+# %%
+
+def _copy_point(point: Point) -> Point:
+    return Point(point.x, point.y)
+
+
+def _copy_unit_segment(segment: UnitSegment) -> UnitSegment:
+    return UnitSegment(
+        start=_copy_point(segment.start),
+        end=_copy_point(segment.end),
+    )
+
+
+def _copy_variable_gadget(gadget: VariableGadget) -> VariableGadget:
+    return VariableGadget(
+        variable=gadget.variable,
+        verticies=tuple(_copy_point(point) for point in gadget.verticies),
+        edges=tuple(_copy_grid_edge(edge) for edge in gadget.edges),
+    )
+
+
+def _copy_clause_gadget(gadget: ClauseGadget) -> ClauseGadget:
+    return ClauseGadget(
+        label=gadget.label,
+        left=_copy_point(gadget.left),
+        middle=_copy_point(gadget.middle),
+        right=_copy_point(gadget.right),
+        edges=tuple(_copy_grid_edge(edge) for edge in gadget.edges),
+    )
+
+
+def _subdivide_connector_gadget(gadget: TGAConnectorGadget) -> TGEConnectorGadget:
+    points = _path_points(gadget.edge)
+    interior_verticies = tuple(
+        _copy_point(point)
+        for point in points[1:-1]
+    )
+    unit_edges = tuple(
+        GridEdge(segments=(_copy_unit_segment(segment),))
+        for segment in gadget.edge.segments
+    )
+
+    return TGEConnectorGadget(
+        clause_label=gadget.clause_label,
+        variable=gadget.variable,
+        slot=gadget.slot,
+        verticies=interior_verticies,
+        edges=unit_edges,
+    )
+
+
+
+# %%
+# CONVERTER
+
+def convert_tga_pvc_to_tge_pvc(graph: TGAPVCGraph) -> TGEPVCGraph:
+    variable_gadgets = {
+        variable: _copy_variable_gadget(gadget)
+        for variable, gadget in graph.variable_gadgets.items()
+    }
+    clause_gadgets = {
+        label: _copy_clause_gadget(gadget)
+        for label, gadget in graph.clause_gadgets.items()
+    }
+    connector_gadgets = tuple(
+        _subdivide_connector_gadget(gadget)
+        for gadget in graph.connector_gadgets
+    )
+
+    connector_vertex_count = sum(
+        len(gadget.verticies)
+        for gadget in connector_gadgets
+    )
+    k = graph.k + connector_vertex_count // 2
+
+    return TGEPVCGraph(
+        variable_gadgets=variable_gadgets,
+        clause_gadgets=clause_gadgets,
+        connector_gadgets=connector_gadgets,
+        k=k,
+    )
+
+
+
+# %%
+# TEXT OUTPUT
+
+def summarize_tge_pvc_graph(graph: TGEPVCGraph) -> None:
+    variable_vertex_count = sum(
+        len(gadget.verticies)
+        for gadget in graph.variable_gadgets.values()
+    )
+    variable_edge_count = sum(
+        len(gadget.edges)
+        for gadget in graph.variable_gadgets.values()
+    )
+    clause_vertex_count = 3 * len(graph.clause_gadgets)
+    clause_edge_count = sum(
+        len(gadget.edges)
+        for gadget in graph.clause_gadgets.values()
+    )
+    connector_vertex_count = sum(
+        len(gadget.verticies)
+        for gadget in graph.connector_gadgets
+    )
+    connector_edge_count = sum(
+        len(gadget.edges)
+        for gadget in graph.connector_gadgets
+    )
+
+    warnings: list[str] = []
+
+    odd_connectors = [
+        f"{_label_str(gadget.clause_label)}:{gadget.slot}:x{gadget.variable}"
+        for gadget in graph.connector_gadgets
+        if len(gadget.verticies) % 2 != 0
+    ]
+    if odd_connectors:
+        warnings.append(f"odd connector vertex counts: {odd_connectors}")
+
+    non_unit_edges = [
+        f"x{gadget.variable}"
+        for gadget in graph.variable_gadgets.values()
+        for edge in gadget.edges
+        if len(edge.segments) != 1
+    ]
+    non_unit_edges.extend(
+        _label_str(gadget.label)
+        for gadget in graph.clause_gadgets.values()
+        for edge in gadget.edges
+        if len(edge.segments) != 1
+    )
+    non_unit_edges.extend(
+        f"{_label_str(gadget.clause_label)}:{gadget.slot}:x{gadget.variable}"
+        for gadget in graph.connector_gadgets
+        for edge in gadget.edges
+        if len(edge.segments) != 1
+    )
+    if non_unit_edges:
+        warnings.append(f"non-unit edges: {non_unit_edges}")
+
+    print(
+        "TGE-PVC: "
+        f"{len(graph.variable_gadgets)} variable gadgets, "
+        f"{variable_vertex_count} variable vertices, "
+        f"{variable_edge_count} variable edges, "
+        f"{len(graph.clause_gadgets)} clause gadgets, "
+        f"{clause_vertex_count} clause vertices, "
+        f"{clause_edge_count} clause edges, "
+        f"{len(graph.connector_gadgets)} connector gadgets, "
+        f"{connector_vertex_count} connector vertices, "
+        f"{connector_edge_count} connector edges, "
+        f"k={graph.k}"
+    )
+
+    if warnings:
+        print("Warnings:")
+        for warning in warnings:
+            print(f"- {warning}")
+    else:
+        print("No TGE-PVC warnings.")
+
+
+
+# %%
+# DRAWING
+
+def _tge_pvc_bounds(graph: TGEPVCGraph) -> tuple[float, float, float, float, int, int]:
+    points: list[Point] = []
+
+    for gadget in graph.variable_gadgets.values():
+        points.extend(gadget.verticies)
+
+    for gadget in graph.clause_gadgets.values():
+        points.extend([gadget.left, gadget.middle, gadget.right])
+
+    for gadget in graph.connector_gadgets:
+        points.extend(gadget.verticies)
+        for edge in gadget.edges:
+            for segment in edge.segments:
+                points.extend([segment.start, segment.end])
+
+    xs, ys = zip(*(_triangle_xy(point) for point in points))
+    rows = [point.y for point in points]
+    return (
+        min(xs) - 1.0,
+        max(xs) + 1.0,
+        min(ys) - _TRIANGLE_GRID_STEP,
+        max(ys) + _TRIANGLE_GRID_STEP,
+        min(rows) - 1,
+        max(rows) + 1,
+    )
+
+def draw_tge_pvc_graph(graph: TGEPVCGraph, output: Path | str | None = None):
+    min_x, max_x, min_y, max_y, row_min, row_max = _tge_pvc_bounds(graph)
+    fig_width = max(7.0, (max_x - min_x + 1) * 0.5)
+    fig_height = max(4.5, (max_y - min_y + _TRIANGLE_GRID_STEP) * 0.9)
+    fig, axis = plt.subplots(figsize=(fig_width, fig_height))
+
+    _draw_triangle_grid(axis, min_x, max_x, row_min, row_max)
+    axis.axhline(0, color=_VARROW_COLOUR, linewidth=1.2, zorder=1)
+
+    for connector in graph.connector_gadgets:
+        first_edge = connector.edges[0]
+        color = _POS_COLOUR if first_edge.end.y > 0 else _NEG_COLOUR
+        for edge in connector.edges:
+            segment = edge.segments[0]
+            start = _triangle_xy(segment.start)
+            end = _triangle_xy(segment.end)
+            axis.plot(
+                [start[0], end[0]],
+                [start[1], end[1]],
+                color=color,
+                linewidth=1.2,
+                alpha=0.65,
+                zorder=2,
+            )
+
+        for index, vertex in enumerate(connector.verticies):
+            _draw_pvc_vertex(
+                axis,
+                vertex,
+                color=color,
+                filled=(index % 2 == 0),
+                size=32,
+                zorder=5,
+            )
+
+    for gadget in graph.variable_gadgets.values():
+        for edge in gadget.edges:
+            start = _triangle_xy(edge.start)
+            end = _triangle_xy(edge.end)
+            axis.plot(
+                [start[0], end[0]],
+                [start[1], end[1]],
+                color="#222222",
+                linewidth=1.6,
+                zorder=3,
+            )
+
+        for index, vertex in enumerate(gadget.verticies):
+            _draw_pvc_vertex(
+                axis,
+                vertex,
+                color="#222222",
+                filled=(index % 2 == 0),
+                size=42,
+                zorder=6,
+            )
+
+        variable_start_x, variable_start_y = _triangle_xy(gadget.verticies[0])
+        variable_end_x, variable_end_y = _triangle_xy(gadget.verticies[-1])
+        axis.text(
+            (variable_start_x + variable_end_x) / 2,
+            (variable_start_y + variable_end_y) / 2 - 0.28,
+            f"x{gadget.variable}",
+            ha="center",
+            va="top",
+            fontsize=8,
+            color="#222222",
+            zorder=7,
+        )
+
+    for gadget in graph.clause_gadgets.values():
+        color = _POS_COLOUR if gadget.left.y > 0 else _NEG_COLOUR
+        for edge in gadget.edges:
+            start = _triangle_xy(edge.start)
+            end = _triangle_xy(edge.end)
+            axis.plot(
+                [start[0], end[0]],
+                [start[1], end[1]],
+                color=color,
+                linewidth=2.0,
+                zorder=4,
+            )
+
+        corners = (gadget.left, gadget.middle, gadget.right)
+        for corner in corners:
+            _draw_pvc_vertex(
+                axis,
+                corner,
+                color=color,
+                filled=(gadget.left.y < 0),
+                size=46,
+                zorder=6,
+            )
+
+        left_x, left_y = _triangle_xy(gadget.left)
+        right_x, right_y = _triangle_xy(gadget.right)
+        axis.text(
+            (left_x + right_x) / 2,
+            (left_y + right_y) / 2 + (0.18 if gadget.left.y > 0 else -0.18),
+            _label_str(gadget.label),
+            ha="center",
+            va=("bottom" if gadget.left.y > 0 else "top"),
+            fontsize=10,
+            color=color,
+            fontweight="bold",
+            zorder=7,
+        )
+
+    axis.set_aspect("equal", adjustable="box")
+    axis.set_xlim(min_x, max_x)
+    axis.set_ylim(min_y, max_y)
+    axis.set_yticks([row * _TRIANGLE_GRID_STEP for row in range(row_min, row_max + 1)])
+    axis.set_yticklabels([str(row) for row in range(row_min, row_max + 1)], fontsize=7)
+    axis.tick_params(axis="x", bottom=False, labelbottom=False)
+    axis.tick_params(axis="y", left=False, length=0, labelleft=True)
+    axis.set_title("Triangle-Grid-Embedded Planar Vertex Cover")
+    for spine in axis.spines.values():
+        spine.set_visible(False)
+    fig.tight_layout()
+
+    if output is not None:
+        fig.savefig(Path(output), bbox_inches="tight")
+        print(f"Saved to {output}")
+
+    return fig, axis
+
+
+# %%
+tge_pvc_graph = convert_tga_pvc_to_tge_pvc(tga_pvc_graph)
+summarize_tge_pvc_graph(tge_pvc_graph)
+fig, axis = draw_tge_pvc_graph(tge_pvc_graph)
 plt.show()
 
 # %%

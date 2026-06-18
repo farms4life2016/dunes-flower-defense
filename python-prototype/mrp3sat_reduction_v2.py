@@ -1996,7 +1996,7 @@ def draw_tga_pvc_graph(graph: TGAPVCGraph, output: Path | str | None = None):
     axis.set_yticklabels([str(row) for row in range(row_min, row_max + 1)], fontsize=7)
     axis.tick_params(axis="x", bottom=False, labelbottom=False)
     axis.tick_params(axis="y", left=False, length=0, labelleft=True)
-    axis.set_title("Triangle-Grid-Aligned Planar Vertex Cover")
+    axis.set_title(f"Triangle-Grid-Aligned Planar Vertex Cover (k = {graph.k})")
     for spine in axis.spines.values():
         spine.set_visible(False)
     fig.tight_layout()
@@ -2258,11 +2258,20 @@ def draw_tge_pvc_graph(graph: TGEPVCGraph, output: Path | str | None = None):
             )
 
         for index, vertex in enumerate(connector.verticies):
+            # bipartite drawing:
+            # if y > 0, then connector connects from solid circle on variable bar, so start with hollow fill
+            # if y < 0, then connector connects from hollow circle on variable bar, so start with solid fill
+            if vertex.y > 0:
+                is_filled = (index % 2 == 1)
+            elif vertex.y < 0:
+                is_filled = (index % 2 == 0)
+            else:
+                raise ValueError("Connector vertex cannot be on the variable row.")
             _draw_pvc_vertex(
                 axis,
                 vertex,
                 color=color,
-                filled=(index % 2 == 0),
+                filled=is_filled,
                 size=32,
                 zorder=5,
             )
@@ -2347,7 +2356,7 @@ def draw_tge_pvc_graph(graph: TGEPVCGraph, output: Path | str | None = None):
     axis.set_yticklabels([str(row) for row in range(row_min, row_max + 1)], fontsize=7)
     axis.tick_params(axis="x", bottom=False, labelbottom=False)
     axis.tick_params(axis="y", left=False, length=0, labelleft=True)
-    axis.set_title("Triangle-Grid-Embedded Planar Vertex Cover")
+    axis.set_title(f"Triangle-Grid-Embedded Planar Vertex Cover (k = {graph.k})")
     for spine in axis.spines.values():
         spine.set_visible(False)
     fig.tight_layout()

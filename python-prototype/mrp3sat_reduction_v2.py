@@ -110,7 +110,7 @@ import yaml
 
 # %matplotlib inline
 
-INPUT_PATH = "input-unsatisfiable.yaml"
+INPUT_PATH = "input-unsatisfiable.yaml" # unsatisfiable input-varied.yaml
 
 print("All OK!")
 
@@ -3174,19 +3174,14 @@ def build_btd_certificate(
     instance: MRP3SATInstance,
     graph: BTDGraph,
 ) -> tuple[Point, ...]:
-    """Convert the MRP3SAT certificate into BTD monkey placements.
-
-    If the assignment leaves a clause unsatisfied, the local triangle needs all
-    three corners covered. That intentionally creates an over-budget BTD
-    placement, which is useful for visualizing no-instances.
-    """
+    """Convert the MRP3SAT certificate into raw BTD monkey placements."""
     selected = _selected_btd_variable_vertices(instance, graph)
 
     for connector in graph.connector_gadgets:
         path = _btd_connector_path(connector)
         variable_is_selected = path[0] in selected
 
-        for index, vertex in enumerate(path[1:-1], start=1):
+        for index, vertex in enumerate(path[1:], start=1):
             should_select = (
                 variable_is_selected
                 if index % 2 == 0
@@ -3195,22 +3190,26 @@ def build_btd_certificate(
             if should_select:
                 selected.add(vertex)
 
-    satisfied_by_clause = _btd_satisfied_connectors_by_clause(instance, graph)
+    # Clause-triangle repair is intentionally disabled for now so the drawing
+    # shows where raw connector propagation leaves the BTD graph.
+    repair_clause_triangles = False
+    if repair_clause_triangles:
+        satisfied_by_clause = _btd_satisfied_connectors_by_clause(instance, graph)
 
-    for label, clause_gadget in graph.clause_gadgets.items():
-        satisfied_connectors = satisfied_by_clause[label]
-        if not satisfied_connectors:
-            selected.update(_btd_clause_corner_by_slot(clause_gadget).values())
-            continue
+        for label, clause_gadget in graph.clause_gadgets.items():
+            satisfied_connectors = satisfied_by_clause[label]
+            if not satisfied_connectors:
+                selected.update(_btd_clause_corner_by_slot(clause_gadget).values())
+                continue
 
-        omitted_connector = satisfied_connectors[0]
-        omitted_corner = _btd_clause_corner_by_slot(clause_gadget)[
-            omitted_connector.slot
-        ]
+            omitted_connector = satisfied_connectors[0]
+            omitted_corner = _btd_clause_corner_by_slot(clause_gadget)[
+                omitted_connector.slot
+            ]
 
-        for corner in _btd_clause_corner_by_slot(clause_gadget).values():
-            if corner != omitted_corner:
-                selected.add(corner)
+            for corner in _btd_clause_corner_by_slot(clause_gadget).values():
+                if corner != omitted_corner:
+                    selected.add(corner)
 
     certificate = tuple(sorted(selected, key=lambda point: (point.y, point.x)))
 
@@ -3375,25 +3374,44 @@ def draw_btd_certificate(
     )
     axis.legend(loc="upper right", fontsize=7, framealpha=0.7)
 
+    budget_delta = len(certificate_points) - graph.k
+    if budget_delta > 0:
+        budget_line = f"budget delta: +{budget_delta}"
+    elif budget_delta < 0:
+        budget_line = f"budget delta: {budget_delta}"
+    else:
+        budget_line = "budget delta: 0"
+    stats_text = "\n".join((
+        f"monkeys used: {len(certificate_points)} / {graph.k}",
+        budget_line,
+        f"uncovered tracks: {len(uncovered_tracks)}",
+    ))
+    axis.text(
+        0.98,
+        0.02,
+        stats_text,
+        transform=axis.transAxes,
+        ha="right",
+        va="bottom",
+        fontsize=8,
+        color="#222222",
+        bbox=dict(
+            boxstyle="round,pad=0.35",
+            facecolor="white",
+            edgecolor="#999999",
+            alpha=0.78,
+        ),
+        zorder=20,
+    )
+
     axis.set_aspect("equal", adjustable="box")
-    axis.set_xlim(min_x, max_x + 1)
+    axis.set_xlim(min_x, max_x + 2) # extend by 2 because text is longer
     axis.set_ylim(min_y, max_y)
     axis.set_yticks([row * _TRIANGLE_GRID_STEP for row in range(row_min, row_max + 1)])
     axis.set_yticklabels([str(row) for row in range(row_min, row_max + 1)], fontsize=7)
     axis.tick_params(axis="x", bottom=False, labelbottom=False)
     axis.tick_params(axis="y", left=False, length=0, labelleft=True)
-    budget_delta = len(certificate_points) - graph.k
-    if budget_delta > 0:
-        budget_text = f"k + {budget_delta}"
-    elif budget_delta < 0:
-        budget_text = f"k - {-budget_delta}"
-    else:
-        budget_text = "k"
-    axis.set_title(
-        "Bloons TD Certificate "
-        f"({len(certificate_points)} monkeys = {budget_text}, "
-        f"{len(uncovered_tracks)} uncovered tracks)"
-    )
+    axis.set_title(f"Bloons TD Certificate (k = {graph.k})")
     for spine in axis.spines.values():
         spine.set_visible(False)
     fig.tight_layout()

@@ -2821,7 +2821,14 @@ plt.show()
 
 # %% [markdown]
 # ## Direct Conversion and Flattening BTDGraph
-# TODO: later...
+#
+# TODO: later...but essentially we just want to verify these tasks:
+#
+# + we can flatten BTDGraph into BTDInstance, a minimal data structure with a set of verticies and tracks
+# + we can convert directly from MRP3SATInstance to BTDGraph without any NP-Complete problems in-between
+# + ditto but convert MRP3SATInstance into BTDInstance
+#
+# I'm still unsure if the game engine should use BTDGraph so it's easier to show the solution, or if it should use BTDInstance because it's easier to store and render.
 
 # %%
 # this cell is intentional empty so we can add code here later
@@ -2830,3 +2837,227 @@ plt.show()
 # ## Yes-instance to Yes-instance
 
 # %%
+
+
+# %% [markdown]
+# ## MRP3SAT Certificate Visualizer
+
+# %%
+_CERT_TRUE_FILL = "#d9f0d3"
+_CERT_TRUE_EDGE = "#1b7837"
+_CERT_FALSE_FILL = "#fddbc7"
+_CERT_FALSE_EDGE = "#b2182b"
+_CERT_SATISFIED_COLOUR = "#ffb000"
+_CERT_UNSATISFIED_COLOUR = "#555555"
+
+
+def _clause_signs_by_label(instance: MRP3SATInstance) -> dict[int, bool]:
+    signs: dict[int, bool] = {}
+
+    for clause in instance.positive:
+        signs[clause.label] = True
+
+    for clause in instance.negative:
+        signs[clause.label] = False
+
+    return signs
+
+
+def _connector_is_satisfied(
+    instance: MRP3SATInstance,
+    connector: ConnectorEdge,
+    positive_by_label: dict[int, bool],
+) -> bool:
+    is_positive = positive_by_label[connector.clause_label]
+    value = instance.certificate[connector.variable - 1]
+
+    return value if is_positive else not value
+
+
+def _satisfied_connectors_by_clause(
+    instance: MRP3SATInstance,
+    graph: MRP3SATGraph,
+) -> dict[int, tuple[ConnectorEdge, ...]]:
+    positive_by_label = _clause_signs_by_label(instance)
+    satisfied: dict[int, list[ConnectorEdge]] = {
+        clause.label: []
+        for clause in instance.clauses
+    }
+
+    for connector in graph.edges:
+        if _connector_is_satisfied(instance, connector, positive_by_label):
+            satisfied[connector.clause_label].append(connector)
+
+    return {
+        label: tuple(sorted(
+            connectors,
+            key=lambda connector: (connector.slot, connector.variable),
+        ))
+        for label, connectors in satisfied.items()
+    }
+
+
+def _certificate_truth_text(value: bool) -> str:
+    return "T" if value else "F"
+
+
+def _certificate_clause_text(
+    clause: ClauseSegment,
+    satisfied_connectors: tuple[ConnectorEdge, ...],
+) -> str:
+    if not satisfied_connectors:
+        return f"{_label_str(clause.label)} UNSAT"
+
+    occurrences = ", ".join(
+        f"x{connector.variable}:s{connector.slot}"
+        for connector in satisfied_connectors
+    )
+    return f"{_label_str(clause.label)} SAT: {occurrences}"
+
+
+# %%
+def draw_sga_certificate(
+    instance: MRP3SATInstance,
+    graph: MRP3SATGraph,
+    output: Path | str | None = None,
+):
+    """Render the provided MRP3SAT certificate on the square-grid graph."""
+    min_x, max_x, min_y, max_y = _graph_bounds(graph)
+    fig_width = max(7.0, (max_x - min_x + 1) * 0.5)
+    fig_height = max(4.5, (max_y - min_y + 2) * 0.9)
+    fig, axis = plt.subplots(figsize=(fig_width, fig_height))
+
+    positive_by_label = _clause_signs_by_label(instance)
+    satisfied_by_clause = _satisfied_connectors_by_clause(instance, graph)
+    satisfied_connectors = {
+        connector
+        for connectors in satisfied_by_clause.values()
+        for connector in connectors
+    }
+
+    axis.axhline(0, color=_VARROW_COLOUR, linewidth=1.2, zorder=1)
+
+    for variable in graph.variables.values():
+        value = instance.certificate[variable.var - 1]
+        bx = variable.x_start - 0.4
+        bw = variable.x_end - variable.x_start + 0.8
+        fill = _CERT_TRUE_FILL if value else _CERT_FALSE_FILL
+        edge = _CERT_TRUE_EDGE if value else _CERT_FALSE_EDGE
+
+        axis.add_patch(FancyBboxPatch(
+            (bx, variable.y - _BOX_H / 2),
+            bw,
+            _BOX_H,
+            boxstyle="round,pad=0.02",
+            linewidth=1.6,
+            edgecolor=edge,
+            facecolor=fill,
+            zorder=5,
+        ))
+
+        axis.text(
+            bx + bw / 2,
+            variable.y,
+            f"x{variable.var} = {_certificate_truth_text(value)}",
+            ha="center",
+            va="center",
+            fontsize=9,
+            color="#222222",
+            fontweight="bold",
+            zorder=6,
+        )
+
+    for clause in graph.clauses.values():
+        is_positive = positive_by_label[clause.label]
+        color = _POS_COLOUR if is_positive else _NEG_COLOUR
+        clause_is_satisfied = bool(satisfied_by_clause[clause.label])
+        label_color = color if clause_is_satisfied else _CERT_UNSATISFIED_COLOUR
+
+        axis.plot(
+            [clause.x_start, clause.x_end],
+            [clause.y, clause.y],
+            color=color,
+            linewidth=2.4,
+            zorder=3,
+        )
+        axis.text(
+            (clause.x_start + clause.x_end) / 2,
+            clause.y + (0.16 if clause.y > 0 else -0.16),
+            _certificate_clause_text(clause, satisfied_by_clause[clause.label]),
+            ha="center",
+            va=("bottom" if clause.y > 0 else "top"),
+            fontsize=9,
+            color=label_color,
+            fontweight="bold",
+            zorder=7,
+        )
+
+    for connector in graph.edges:
+        is_positive = positive_by_label[connector.clause_label]
+        color = _POS_COLOUR if is_positive else _NEG_COLOUR
+        is_satisfied = connector in satisfied_connectors
+
+        for segment in connector.segments:
+            axis.plot(
+                [segment.start.x, segment.end.x],
+                [segment.start.y, segment.end.y],
+                color=color,
+                linewidth=1.2,
+                alpha=0.45,
+                zorder=2,
+            )
+
+            if is_satisfied:
+                axis.plot(
+                    [segment.start.x, segment.end.x],
+                    [segment.start.y, segment.end.y],
+                    color=_CERT_SATISFIED_COLOUR,
+                    linewidth=3.0,
+                    alpha=0.85,
+                    zorder=4,
+                )
+
+        endpoint_size = 54 if is_satisfied else 18
+        endpoint_color = _CERT_SATISFIED_COLOUR if is_satisfied else color
+        axis.scatter(
+            [connector.end.x],
+            [connector.end.y],
+            color=endpoint_color,
+            edgecolors="#222222" if is_satisfied else "none",
+            linewidths=0.6 if is_satisfied else 0,
+            s=endpoint_size,
+            zorder=6,
+        )
+
+    axis.plot(
+        [],
+        [],
+        color=_CERT_SATISFIED_COLOUR,
+        linewidth=3.0,
+        label="satisfied literal occurrence",
+    )
+    axis.legend(loc="upper right", fontsize=7, framealpha=0.7)
+
+    axis.set_aspect("equal", adjustable="box")
+    axis.set_xlim(min_x - 1, max_x + 1)
+    axis.set_ylim(min_y - 1, max_y + 1)
+    axis.set_xticks(range(min_x - 1, max_x + 2))
+    axis.set_yticks(range(min_y - 1, max_y + 2))
+    axis.tick_params(axis="x", bottom=False, labelbottom=False)
+    axis.tick_params(axis="y", left=False, length=0, labelleft=True)
+    axis.grid(True, color=_GRIDLINE_COLOUR, linewidth=0.6, linestyle="--", zorder=0)
+    axis.set_title("MRP3SAT Certificate on SGA Graph")
+    for spine in axis.spines.values():
+        spine.set_visible(False)
+    fig.tight_layout()
+
+    if output is not None:
+        fig.savefig(Path(output), bbox_inches="tight")
+        print(f"Saved to {output}")
+
+    return fig, axis
+
+
+# %%
+fig, axis = draw_sga_certificate(mrp3sat_instance, sga_graph)
+plt.show()

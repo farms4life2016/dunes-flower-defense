@@ -2836,11 +2836,8 @@ plt.show()
 # %% [markdown]
 # ## Yes-instance to Yes-instance
 
-# %%
-
-
 # %% [markdown]
-# ## MRP3SAT Certificate Visualizer
+# ### MRP3SAT Certificate Visualizer
 
 # %%
 _CERT_TRUE_FILL = "#d9f0d3"
@@ -3061,3 +3058,357 @@ def draw_sga_certificate(
 # %%
 fig, axis = draw_sga_certificate(mrp3sat_instance, sga_graph)
 plt.show()
+
+
+# %% [markdown]
+# ### BTD Certificate Transformer and Visualizer
+
+# %%
+def _btd_clause_corner_by_slot(gadget: BTDClauseGadget) -> dict[int, Point]:
+    return {
+        LEFT: gadget.left,
+        MIDDLE: gadget.middle,
+        RIGHT: gadget.right,
+    }
+
+
+def _btd_connector_is_satisfied(
+    instance: MRP3SATInstance,
+    connector: BTDConnectorGadget,
+    positive_by_label: dict[int, bool],
+) -> bool:
+    is_positive = positive_by_label[connector.clause_label]
+    value = instance.certificate[connector.variable - 1]
+
+    return value if is_positive else not value
+
+
+def _btd_connector_path(connector: BTDConnectorGadget) -> tuple[Point, ...]:
+    if not connector.tracks:
+        raise ValueError(
+            f"Connector {_label_str(connector.clause_label)}:"
+            f"{connector.slot}:x{connector.variable} has no tracks."
+        )
+
+    first_track = connector.tracks[0]
+    if first_track.start.y == 0:
+        current = first_track.start
+    elif first_track.end.y == 0:
+        current = first_track.end
+    else:
+        raise ValueError(
+            f"Connector {_label_str(connector.clause_label)}:"
+            f"{connector.slot}:x{connector.variable} does not start on the variable row."
+        )
+
+    points = [current]
+
+    for track in connector.tracks:
+        if track.start == current:
+            current = track.end
+        elif track.end == current:
+            current = track.start
+        else:
+            raise ValueError(
+                f"Connector {_label_str(connector.clause_label)}:"
+                f"{connector.slot}:x{connector.variable} has non-adjacent tracks."
+            )
+        points.append(current)
+
+    path = tuple(points)
+    if path[0].y != 0 or path[-1].y == 0:
+        raise ValueError(
+            f"Connector {_label_str(connector.clause_label)}:"
+            f"{connector.slot}:x{connector.variable} path endpoints look wrong."
+        )
+
+    if path[1:-1] != connector.verticies:
+        raise ValueError(
+            f"Connector {_label_str(connector.clause_label)}:"
+            f"{connector.slot}:x{connector.variable} path does not match stored vertices."
+        )
+
+    return path
+
+
+def _btd_satisfied_connectors_by_clause(
+    instance: MRP3SATInstance,
+    graph: BTDGraph,
+) -> dict[int, tuple[BTDConnectorGadget, ...]]:
+    positive_by_label = _clause_signs_by_label(instance)
+    satisfied: dict[int, list[BTDConnectorGadget]] = {
+        label: []
+        for label in graph.clause_gadgets
+    }
+
+    for connector in graph.connector_gadgets:
+        if _btd_connector_is_satisfied(instance, connector, positive_by_label):
+            satisfied[connector.clause_label].append(connector)
+
+    return {
+        label: tuple(sorted(
+            connectors,
+            key=lambda connector: (connector.slot, connector.variable),
+        ))
+        for label, connectors in satisfied.items()
+    }
+
+
+def _selected_btd_variable_vertices(
+    instance: MRP3SATInstance,
+    graph: BTDGraph,
+) -> set[Point]:
+    selected: set[Point] = set()
+
+    for variable, gadget in graph.variable_gadgets.items():
+        use_even_x = instance.certificate[variable - 1]
+        for vertex in gadget.verticies:
+            if (vertex.x % 2 == 0) == use_even_x:
+                selected.add(vertex)
+
+    return selected
+
+
+# %%
+def build_btd_certificate(
+    instance: MRP3SATInstance,
+    graph: BTDGraph,
+) -> tuple[Point, ...]:
+    """Convert the MRP3SAT certificate into BTD monkey placements.
+
+    If the assignment leaves a clause unsatisfied, the local triangle needs all
+    three corners covered. That intentionally creates an over-budget BTD
+    placement, which is useful for visualizing no-instances.
+    """
+    selected = _selected_btd_variable_vertices(instance, graph)
+
+    for connector in graph.connector_gadgets:
+        path = _btd_connector_path(connector)
+        variable_is_selected = path[0] in selected
+
+        for index, vertex in enumerate(path[1:-1], start=1):
+            should_select = (
+                variable_is_selected
+                if index % 2 == 0
+                else not variable_is_selected
+            )
+            if should_select:
+                selected.add(vertex)
+
+    satisfied_by_clause = _btd_satisfied_connectors_by_clause(instance, graph)
+
+    for label, clause_gadget in graph.clause_gadgets.items():
+        satisfied_connectors = satisfied_by_clause[label]
+        if not satisfied_connectors:
+            selected.update(_btd_clause_corner_by_slot(clause_gadget).values())
+            continue
+
+        omitted_connector = satisfied_connectors[0]
+        omitted_corner = _btd_clause_corner_by_slot(clause_gadget)[
+            omitted_connector.slot
+        ]
+
+        for corner in _btd_clause_corner_by_slot(clause_gadget).values():
+            if corner != omitted_corner:
+                selected.add(corner)
+
+    certificate = tuple(sorted(selected, key=lambda point: (point.y, point.x)))
+
+    return certificate
+
+
+def _btd_uncovered_tracks(
+    graph: BTDGraph,
+    certificate_points: tuple[Point, ...],
+) -> tuple[TrackSegment, ...]:
+    selected = set(certificate_points)
+
+    return tuple(
+        track
+        for track in _all_btd_tracks(graph)
+        if track.start not in selected and track.end not in selected
+    )
+
+
+def verify_btd_certificate(
+    graph: BTDGraph,
+    certificate_points: tuple[Point, ...],
+) -> dict[str, int]:
+    selected = set(certificate_points)
+
+    if len(selected) != len(certificate_points):
+        raise ValueError("BTD certificate contains duplicate points.")
+
+    vertices = set(_all_btd_vertices(graph))
+    invalid_points = sorted(
+        selected - vertices,
+        key=lambda point: (point.y, point.x),
+    )
+    if invalid_points:
+        raise ValueError(f"BTD certificate contains non-vertices: {invalid_points}")
+
+    uncovered_tracks = _btd_uncovered_tracks(graph, certificate_points)
+    over_budget = max(0, len(certificate_points) - graph.k)
+    under_budget = max(0, graph.k - len(certificate_points))
+
+    print(
+        "BTD certificate: "
+        f"{len(certificate_points)} monkeys, "
+        f"k={graph.k}, "
+        f"over_budget={over_budget}, "
+        f"under_budget={under_budget}, "
+        f"uncovered_tracks={len(uncovered_tracks)}"
+    )
+
+    return {
+        "monkeys": len(certificate_points),
+        "k": graph.k,
+        "over_budget": over_budget,
+        "under_budget": under_budget,
+        "uncovered_tracks": len(uncovered_tracks),
+    }
+
+
+# %%
+def draw_btd_certificate(
+    graph: BTDGraph,
+    certificate_points: tuple[Point, ...],
+    tower_range: float = _BTD_TOWER_RANGE,
+    output: Path | str | None = None,
+):
+    selected = set(certificate_points)
+    uncovered_tracks = set(_btd_uncovered_tracks(graph, certificate_points))
+    min_x, max_x, min_y, max_y, row_min, row_max = _btd_bounds(graph)
+    fig_width = max(7.0, (max_x - min_x + 1) * 0.5)
+    fig_height = max(4.5, (max_y - min_y + _TRIANGLE_GRID_STEP) * 0.9)
+    fig, axis = plt.subplots(figsize=(fig_width, fig_height))
+
+    _draw_triangle_grid(axis, min_x, max_x, row_min, row_max)
+    axis.axhline(0, color=_VARROW_COLOUR, linewidth=1.2, zorder=1)
+
+    tracks = _all_btd_tracks(graph)
+    vertices = _all_btd_vertices(graph)
+
+    for track in tracks:
+        x1, y1 = _triangle_xy(track.start)
+        x2, y2 = _triangle_xy(track.end)
+        mid_x = (x1 + x2) / 2
+        mid_y = (y1 + y2) / 2
+        track_is_uncovered = track in uncovered_tracks
+        line_zorder = 5 if track_is_uncovered else 2
+        axis.plot(
+            [x1, mid_x],
+            [y1, mid_y],
+            color=("#ff3333" if track_is_uncovered else _degree_colour(track.start_degree)),
+            linewidth=(_BTD_TRACK_LINEWIDTH + 1.4 if track_is_uncovered else _BTD_TRACK_LINEWIDTH),
+            zorder=line_zorder,
+            solid_capstyle="butt",
+        )
+        axis.plot(
+            [mid_x, x2],
+            [mid_y, y2],
+            color=("#ff3333" if track_is_uncovered else _degree_colour(track.end_degree)),
+            linewidth=(_BTD_TRACK_LINEWIDTH + 1.4 if track_is_uncovered else _BTD_TRACK_LINEWIDTH),
+            zorder=line_zorder,
+            solid_capstyle="butt",
+        )
+
+    for vertex in vertices:
+        x, y = _triangle_xy(vertex)
+        if vertex in selected:
+            axis.add_patch(Circle(
+                (x, y),
+                tower_range,
+                facecolor=_BTD_RANGE_FILL,
+                edgecolor=_BTD_RANGE_EDGE,
+                linewidth=0.8,
+                alpha=_BTD_RANGE_ALPHA,
+                zorder=3,
+            ))
+        else:
+            axis.scatter(
+                [x], [y],
+                s=22,
+                facecolors="white",
+                edgecolors="#999999",
+                linewidths=0.7,
+                alpha=0.65,
+                zorder=4,
+            )
+
+    for vertex in vertices:
+        if vertex not in selected:
+            continue
+
+        x, y = _triangle_xy(vertex)
+        _draw_btd_icon(
+            axis,
+            x,
+            y,
+            _BTD_DART_MONKEY_PATH,
+            _fallback_dart_monkey,
+            _BTD_ICON_HALF_MONKEY,
+        )
+
+    for track in tracks:
+        x1, y1 = _triangle_xy(track.start)
+        x2, y2 = _triangle_xy(track.end)
+        _draw_btd_icon(
+            axis,
+            (x1 + x2) / 2,
+            (y1 + y2) / 2,
+            _BTD_RED_BLOON_PATH,
+            _fallback_red_bloon,
+            _BTD_ICON_HALF_BLOON,
+        )
+
+    for degree, colour in sorted(_BTD_DEGREE_COLOURS.items()):
+        axis.plot([], [], color=colour, linewidth=2.5, label=f"degree {degree}")
+    axis.plot([], [], color="#ff3333", linewidth=3.5, label="uncovered track")
+    axis.scatter(
+        [], [],
+        s=22,
+        facecolors="white",
+        edgecolors="#999999",
+        linewidths=0.7,
+        label="empty tower vertex",
+    )
+    axis.legend(loc="upper right", fontsize=7, framealpha=0.7)
+
+    axis.set_aspect("equal", adjustable="box")
+    axis.set_xlim(min_x, max_x + 1)
+    axis.set_ylim(min_y, max_y)
+    axis.set_yticks([row * _TRIANGLE_GRID_STEP for row in range(row_min, row_max + 1)])
+    axis.set_yticklabels([str(row) for row in range(row_min, row_max + 1)], fontsize=7)
+    axis.tick_params(axis="x", bottom=False, labelbottom=False)
+    axis.tick_params(axis="y", left=False, length=0, labelleft=True)
+    budget_delta = len(certificate_points) - graph.k
+    if budget_delta > 0:
+        budget_text = f"k + {budget_delta}"
+    elif budget_delta < 0:
+        budget_text = f"k - {-budget_delta}"
+    else:
+        budget_text = "k"
+    axis.set_title(
+        "Bloons TD Certificate "
+        f"({len(certificate_points)} monkeys = {budget_text}, "
+        f"{len(uncovered_tracks)} uncovered tracks)"
+    )
+    for spine in axis.spines.values():
+        spine.set_visible(False)
+    fig.tight_layout()
+
+    if output is not None:
+        fig.savefig(Path(output), bbox_inches="tight")
+        print(f"Saved to {output}")
+
+    return fig, axis
+
+
+# %%
+btd_certificate = build_btd_certificate(mrp3sat_instance, btd_graph)
+verify_btd_certificate(btd_graph, btd_certificate)
+fig, axis = draw_btd_certificate(btd_graph, btd_certificate)
+plt.show()
+
+# %%

@@ -103,7 +103,9 @@ from typing import Iterable
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/matplotlib")
 
 import matplotlib.pyplot as plt
-from matplotlib.patches import FancyBboxPatch
+import numpy as np
+from matplotlib.patches import Circle, Ellipse, FancyBboxPatch, RegularPolygon
+from PIL import Image as PILImage
 import yaml
 
 # %matplotlib inline
@@ -2373,5 +2375,458 @@ tge_pvc_graph = convert_tga_pvc_to_tge_pvc(tga_pvc_graph)
 summarize_tge_pvc_graph(tge_pvc_graph)
 fig, axis = draw_tge_pvc_graph(tge_pvc_graph)
 plt.show()
+
+# %% [markdown]
+# ## BTD
+
+# %%
+# GRAPH DATA STRUCTURES
+
+@dataclass(frozen=True)
+class TrackSegment:
+    start: Point
+    end: Point
+    start_degree: int
+    end_degree: int
+
+
+@dataclass(frozen=True)
+class BTDVariableGadget:
+    variable: int
+    verticies: tuple[Point, ...]
+    tracks: tuple[TrackSegment, ...]
+
+
+@dataclass(frozen=True)
+class BTDClauseGadget:
+    label: int
+    left: Point
+    middle: Point
+    right: Point
+    tracks: tuple[TrackSegment, ...]
+
+
+@dataclass(frozen=True)
+class BTDConnectorGadget:
+    clause_label: int
+    variable: int
+    slot: int
+    verticies: tuple[Point, ...]
+    tracks: tuple[TrackSegment, ...]
+
+
+@dataclass(frozen=True)
+class BTDGraph:
+    variable_gadgets: dict[int, BTDVariableGadget]
+    clause_gadgets: dict[int, BTDClauseGadget]
+    connector_gadgets: tuple[BTDConnectorGadget, ...]
+    k: int
+
+
+
+# %%
+# CONVERTER
+
+def _segments_from_grid_edges(edges: Iterable[GridEdge]) -> tuple[UnitSegment, ...]:
+    return tuple(
+        segment
+        for edge in edges
+        for segment in edge.segments
+    )
+
+
+def _track_from_segment(
+    segment: UnitSegment,
+    degree: dict[Point, int],
+) -> TrackSegment:
+    return TrackSegment(
+        start=_copy_point(segment.start),
+        end=_copy_point(segment.end),
+        start_degree=degree.get(segment.start, 0),
+        end_degree=degree.get(segment.end, 0),
+    )
+
+
+def _tracks_from_grid_edges(
+    edges: Iterable[GridEdge],
+    degree: dict[Point, int],
+) -> tuple[TrackSegment, ...]:
+    return tuple(
+        _track_from_segment(segment, degree)
+        for segment in _segments_from_grid_edges(edges)
+    )
+
+
+def _tge_pvc_degree(graph: TGEPVCGraph) -> dict[Point, int]:
+    degree: dict[Point, int] = {}
+
+    edge_groups = []
+    edge_groups.extend(gadget.edges for gadget in graph.variable_gadgets.values())
+    edge_groups.extend(gadget.edges for gadget in graph.clause_gadgets.values())
+    edge_groups.extend(gadget.edges for gadget in graph.connector_gadgets)
+
+    for edges in edge_groups:
+        for segment in _segments_from_grid_edges(edges):
+            degree[segment.start] = degree.get(segment.start, 0) + 1
+            degree[segment.end] = degree.get(segment.end, 0) + 1
+
+    return degree
+
+
+def convert_tge_pvc_to_btd(graph: TGEPVCGraph) -> BTDGraph:
+    degree = _tge_pvc_degree(graph)
+
+    variable_gadgets = {
+        variable: BTDVariableGadget(
+            variable=gadget.variable,
+            verticies=tuple(_copy_point(vertex) for vertex in gadget.verticies),
+            tracks=_tracks_from_grid_edges(gadget.edges, degree),
+        )
+        for variable, gadget in graph.variable_gadgets.items()
+    }
+
+    clause_gadgets = {
+        label: BTDClauseGadget(
+            label=gadget.label,
+            left=_copy_point(gadget.left),
+            middle=_copy_point(gadget.middle),
+            right=_copy_point(gadget.right),
+            tracks=_tracks_from_grid_edges(gadget.edges, degree),
+        )
+        for label, gadget in graph.clause_gadgets.items()
+    }
+
+    connector_gadgets = tuple(
+        BTDConnectorGadget(
+            clause_label=gadget.clause_label,
+            variable=gadget.variable,
+            slot=gadget.slot,
+            verticies=tuple(_copy_point(vertex) for vertex in gadget.verticies),
+            tracks=_tracks_from_grid_edges(gadget.edges, degree),
+        )
+        for gadget in graph.connector_gadgets
+    )
+
+    return BTDGraph(
+        variable_gadgets=variable_gadgets,
+        clause_gadgets=clause_gadgets,
+        connector_gadgets=connector_gadgets,
+        k=graph.k,
+    )
+
+
+
+# %%
+# TEXT OUTPUT
+
+def _all_btd_tracks(graph: BTDGraph) -> tuple[TrackSegment, ...]:
+    tracks: list[TrackSegment] = []
+    for gadget in graph.variable_gadgets.values():
+        tracks.extend(gadget.tracks)
+    for gadget in graph.clause_gadgets.values():
+        tracks.extend(gadget.tracks)
+    for gadget in graph.connector_gadgets:
+        tracks.extend(gadget.tracks)
+    return tuple(tracks)
+
+
+def _all_btd_vertices(graph: BTDGraph) -> tuple[Point, ...]:
+    vertices = {
+        vertex
+        for gadget in graph.variable_gadgets.values()
+        for vertex in gadget.verticies
+    }
+    vertices.update(
+        corner
+        for gadget in graph.clause_gadgets.values()
+        for corner in (gadget.left, gadget.middle, gadget.right)
+    )
+    vertices.update(
+        vertex
+        for gadget in graph.connector_gadgets
+        for vertex in gadget.verticies
+    )
+    return tuple(sorted(vertices, key=lambda point: (point.y, point.x)))
+
+
+def summarize_btd_graph(graph: BTDGraph) -> None:
+    tracks = _all_btd_tracks(graph)
+    vertices = _all_btd_vertices(graph)
+    degree_distribution: dict[int, int] = {}
+
+    for vertex in vertices:
+        degree = sum(
+            1
+            for track in tracks
+            if track.start == vertex or track.end == vertex
+        )
+        degree_distribution[degree] = degree_distribution.get(degree, 0) + 1
+
+    connector_vertex_count = sum(
+        len(gadget.verticies)
+        for gadget in graph.connector_gadgets
+    )
+
+    print(
+        "BTD: "
+        f"{len(graph.variable_gadgets)} variable gadgets, "
+        f"{len(graph.clause_gadgets)} clause gadgets, "
+        f"{len(graph.connector_gadgets)} connector gadgets, "
+        f"{len(vertices)} towers, "
+        f"{len(tracks)} track segments, "
+        f"{connector_vertex_count} connector vertices, "
+        f"k={graph.k}"
+    )
+    print(f"Degree distribution: {dict(sorted(degree_distribution.items()))}")
+
+
+
+# %%
+# DRAWING
+
+_BTD_TOWER_RANGE = 0.45
+_BTD_DART_MONKEY_PATH = "BTD5_dart_monke.png"
+_BTD_RED_BLOON_PATH = "BTD5_red_bloon.png"
+_BTD_ICON_HALF_MONKEY = 0.22
+_BTD_ICON_HALF_BLOON = 0.15
+_BTD_RANGE_FILL = "#00d4ff"
+_BTD_RANGE_EDGE = "#0099cc"
+_BTD_RANGE_ALPHA = 0.13
+_BTD_MONKEY_FILL = "#8b6914"
+_BTD_MONKEY_EDGE = "#4a3800"
+_BTD_BLOON_FILL = "#ff2222"
+_BTD_BLOON_EDGE = "#990000"
+_BTD_BLOON_HILITE = "#ff9999"
+_BTD_DEGREE_COLOURS = {
+    1: "#ff00ff",
+    2: "#16db65",
+    3: "#0d2818",
+}
+_BTD_TRACK_LINEWIDTH = 3.0
+
+_btd_img_cache: dict[str, np.ndarray | None] = {}
+
+
+def _load_square_rgba(path: str) -> np.ndarray:
+    img = PILImage.open(path).convert("RGBA")
+    width, height = img.size
+    side = max(width, height)
+    square = PILImage.new("RGBA", (side, side), (0, 0, 0, 0))
+    x = (side - width) // 2
+    y = (side - height) // 2
+    square.paste(img, (x, y))
+    return np.array(square)
+
+
+def _try_load_btd_img(path: str) -> np.ndarray | None:
+    if path not in _btd_img_cache:
+        try:
+            _btd_img_cache[path] = _load_square_rgba(path)
+            print(f"[BTD] loaded {path}")
+        except Exception as exc:
+            print(f"[BTD] image unavailable ({exc}), using fallback")
+            _btd_img_cache[path] = None
+
+    return _btd_img_cache[path]
+
+
+def _fallback_dart_monkey(axis, x: float, y: float, half: float) -> None:
+    axis.add_patch(RegularPolygon(
+        (x, y),
+        numVertices=6,
+        radius=half,
+        orientation=math.pi / 6,
+        facecolor=_BTD_MONKEY_FILL,
+        edgecolor=_BTD_MONKEY_EDGE,
+        linewidth=0.9,
+        zorder=7,
+    ))
+    axis.annotate(
+        "",
+        xy=(x + half * 0.95, y),
+        xytext=(x + half * 0.15, y),
+        arrowprops=dict(arrowstyle="->", color="white", lw=0.8),
+        zorder=8,
+    )
+
+
+def _fallback_red_bloon(axis, x: float, y: float, half: float) -> None:
+    axis.add_patch(Ellipse(
+        (x, y - half * 0.05),
+        width=half * 1.7,
+        height=half * 2.0,
+        facecolor=_BTD_BLOON_FILL,
+        edgecolor=_BTD_BLOON_EDGE,
+        linewidth=0.7,
+        zorder=7,
+    ))
+    axis.add_patch(Ellipse(
+        (x - half * 0.28, y + half * 0.45),
+        width=half * 0.32,
+        height=half * 0.42,
+        facecolor=_BTD_BLOON_HILITE,
+        edgecolor="none",
+        alpha=0.9,
+        zorder=8,
+    ))
+
+
+def _draw_btd_icon(
+    axis,
+    x: float,
+    y: float,
+    path: str,
+    fallback_fn,
+    half: float,
+) -> None:
+    img = _try_load_btd_img(path)
+
+    if img is not None:
+        axis.imshow(
+            img,
+            extent=[x - half, x + half, y - half, y + half],
+            aspect="auto",
+            zorder=7,
+            interpolation="antialiased",
+        )
+    else:
+        fallback_fn(axis, x, y, half)
+
+
+def _degree_colour(degree: int) -> str:
+    return _BTD_DEGREE_COLOURS.get(degree, "#777777")
+
+
+def _btd_bounds(graph: BTDGraph) -> tuple[float, float, float, float, int, int]:
+    points = set(_all_btd_vertices(graph))
+    for track in _all_btd_tracks(graph):
+        points.add(track.start)
+        points.add(track.end)
+
+    xs, ys = zip(*(_triangle_xy(point) for point in points))
+    rows = [point.y for point in points]
+    return (
+        min(xs) - 1.0,
+        max(xs) + 1.0,
+        min(ys) - _TRIANGLE_GRID_STEP,
+        max(ys) + _TRIANGLE_GRID_STEP,
+        min(rows) - 1,
+        max(rows) + 1,
+    )
+
+
+def draw_btd_graph(
+    graph: BTDGraph,
+    tower_range: float = _BTD_TOWER_RANGE,
+    output: Path | str | None = None,
+):
+    min_x, max_x, min_y, max_y, row_min, row_max = _btd_bounds(graph)
+    fig_width = max(7.0, (max_x - min_x + 1) * 0.5)
+    fig_height = max(4.5, (max_y - min_y + _TRIANGLE_GRID_STEP) * 0.9)
+    fig, axis = plt.subplots(figsize=(fig_width, fig_height))
+
+    _draw_triangle_grid(axis, min_x, max_x, row_min, row_max)
+    axis.axhline(0, color=_VARROW_COLOUR, linewidth=1.2, zorder=1)
+
+    tracks = _all_btd_tracks(graph)
+    vertices = _all_btd_vertices(graph)
+
+    for track in tracks:
+        x1, y1 = _triangle_xy(track.start)
+        x2, y2 = _triangle_xy(track.end)
+        mid_x = (x1 + x2) / 2
+        mid_y = (y1 + y2) / 2
+        axis.plot(
+            [x1, mid_x],
+            [y1, mid_y],
+            color=_degree_colour(track.start_degree),
+            linewidth=_BTD_TRACK_LINEWIDTH,
+            zorder=2,
+            solid_capstyle="butt",
+        )
+        axis.plot(
+            [mid_x, x2],
+            [mid_y, y2],
+            color=_degree_colour(track.end_degree),
+            linewidth=_BTD_TRACK_LINEWIDTH,
+            zorder=2,
+            solid_capstyle="butt",
+        )
+
+    for vertex in vertices:
+        x, y = _triangle_xy(vertex)
+        axis.add_patch(Circle(
+            (x, y),
+            tower_range,
+            facecolor=_BTD_RANGE_FILL,
+            edgecolor=_BTD_RANGE_EDGE,
+            linewidth=0.8,
+            alpha=_BTD_RANGE_ALPHA,
+            zorder=3,
+        ))
+
+    for vertex in vertices:
+        x, y = _triangle_xy(vertex)
+        _draw_btd_icon(
+            axis,
+            x,
+            y,
+            _BTD_DART_MONKEY_PATH,
+            _fallback_dart_monkey,
+            _BTD_ICON_HALF_MONKEY,
+        )
+
+    for track in tracks:
+        x1, y1 = _triangle_xy(track.start)
+        x2, y2 = _triangle_xy(track.end)
+        _draw_btd_icon(
+            axis,
+            (x1 + x2) / 2,
+            (y1 + y2) / 2,
+            _BTD_RED_BLOON_PATH,
+            _fallback_red_bloon,
+            _BTD_ICON_HALF_BLOON,
+        )
+
+    for degree, colour in sorted(_BTD_DEGREE_COLOURS.items()):
+        axis.plot([], [], color=colour, linewidth=2.5, label=f"degree {degree}")
+    axis.legend(loc="upper right", fontsize=7, framealpha=0.7)
+
+    axis.set_aspect("equal", adjustable="box")
+    axis.set_xlim(min_x, max_x + 1) # add 1 cuz legend box
+    axis.set_ylim(min_y, max_y)
+    axis.set_yticks([row * _TRIANGLE_GRID_STEP for row in range(row_min, row_max + 1)])
+    axis.set_yticklabels([str(row) for row in range(row_min, row_max + 1)], fontsize=7)
+    axis.tick_params(axis="x", bottom=False, labelbottom=False)
+    axis.tick_params(axis="y", left=False, length=0, labelleft=True)
+    axis.set_title(
+        f"Bloons TD Graph (k = {graph.k}, range = {tower_range})"
+    )
+    for spine in axis.spines.values():
+        spine.set_visible(False)
+    fig.tight_layout()
+
+    if output is not None:
+        fig.savefig(Path(output), bbox_inches="tight")
+        print(f"Saved to {output}")
+
+    return fig, axis
+
+
+# %%
+btd_graph = convert_tge_pvc_to_btd(tge_pvc_graph)
+summarize_btd_graph(btd_graph)
+fig, axis = draw_btd_graph(btd_graph)
+plt.show()
+
+# %% [markdown]
+# ## Direct Conversion and Flattening BTDGraph
+# TODO: later...
+
+# %%
+# this cell is intentional empty so we can add code here later
+
+# %% [markdown]
+# ## Yes-instance to Yes-instance
 
 # %%

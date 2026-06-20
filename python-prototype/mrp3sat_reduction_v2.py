@@ -110,7 +110,7 @@ import yaml
 
 # %matplotlib inline
 
-INPUT_PATH = "input-unsatisfiable.yaml" # unsatisfiable input-varied.yaml
+INPUT_PATH = "input-unsatisfiable.yaml"
 
 print("All OK!")
 
@@ -896,7 +896,7 @@ import matplotlib.pyplot as plt
 from matplotlib.patches import FancyBboxPatch
 
 _BOX_H = 0.36
-_VARROW_COLOUR = "#32cd32"
+_VARROW_COLOUR = "#bbbbbb"
 _POS_COLOUR = "#2166ac"
 _NEG_COLOUR = "#b2182b"
 _GRIDLINE_COLOUR = "#aaaaaa"
@@ -1561,7 +1561,7 @@ plt.show()
 
 # %% [markdown]
 # ## TGA-PVC
-# with max degree of 3
+# with max degree 3
 #
 
 # %%
@@ -3423,4 +3423,23 @@ verify_btd_certificate(btd_graph, btd_certificate)
 fig, axis = draw_btd_certificate(btd_graph, btd_certificate)
 plt.show()
 
-# %%
+# %% [markdown]
+# ## Conclusion
+#
+# We have shown, but not formally proven, that BTD is NP-Hard. Along the way, we have also shown that these problems are NP-hard:
+#
+# - SGA-MRP3SAT
+# - TGA-MRP3SAT
+# - TGA-PVC
+# - TGE-PVC
+#
+# Those problems are also NP-Complete because they are just restricted versions of 3SAT and VC, which are also in NP.
+# *You may now use those without proof in your NP-hardness reductions!* ~~Just cite my math paper whenever that comes out...~~
+#
+# Furthermore, this investigation discovered new ways to prove these existing NP-Complete problems:
+#
+# - PVC
+# - PVC with max degree 3
+#
+# So now you can also cite this paper as evidence that those two problems are NP-Complete.
+#

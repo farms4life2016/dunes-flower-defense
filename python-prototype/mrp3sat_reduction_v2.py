@@ -433,8 +433,7 @@ def verify_certificate(
 # ============================================================
 
 def compute_clause_levels(
-    clauses: Iterable[Clause],
-    side_name: str,
+    clauses: Iterable[Clause]
 ) -> dict[int, int]:
 
     clauses = tuple(clauses)
@@ -455,15 +454,12 @@ def compute_clause_levels(
     }
 
     for outer in clauses:
-        outer_variables = set(outer.variables)
-
         for inner in clauses:
             if outer == inner:
                 continue
 
             has_blocked_connection = any(
                 outer.left < variable < outer.right
-                and variable not in outer_variables
                 for variable in inner.variables
             )
 
@@ -505,7 +501,7 @@ def compute_clause_levels(
         )
 
         raise ValidationError(
-            f"{side_name} clauses cannot be drawn "
+            f"Clauses cannot be drawn "
             f"without crossings. Cycle: {cyclic}"
         )
 
@@ -524,13 +520,11 @@ def validate_instance(
     verify_certificate(instance)
 
     positive_levels = compute_clause_levels(
-        instance.positive,
-        "Positive",
+        instance.positive
     )
 
     negative_levels = compute_clause_levels(
-        instance.negative,
-        "Negative",
+        instance.negative
     )
 
     return positive_levels, negative_levels

@@ -67,5 +67,7 @@
         "*.sln": "*.csproj",
         "*.slnx": "*.csproj"
     },
-    "dotnet.defaultSolution": "Dunes Flower Defense.slnx"
+    "dotnet.defaultSolution": "Dunes Flower Defense.slnx",
+    "python.defaultInterpreterPath": "python3",
+    "chatgpt.runCodexInWindowsSubsystemForLinux": true
 }

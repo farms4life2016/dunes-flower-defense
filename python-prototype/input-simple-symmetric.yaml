@@ -1,0 +1,10 @@
+instance:
+  n: 3     # number of variables: x1, x2, ..., xn
+  m: 2     # number of clauses
+  positive:
+    - [1, 2, 3]
+  negative:
+    - [1, 2, 3]
+
+  satisfiable: true
+  certificate: [1, 1, 0]

@@ -3164,6 +3164,11 @@ def _selected_btd_variable_vertices(
 
 
 # %%
+
+# Clause-triangle repair: turn off to show where raw connector propagation leaves the BTD graph.
+# for yes-instances, there should be just enough budget to top up each triangle to 2 monkeys
+REPAIR_TRIANGLES = True
+
 def build_btd_certificate(
     instance: MRP3SATInstance,
     graph: BTDGraph,
@@ -3184,26 +3189,21 @@ def build_btd_certificate(
             if should_select:
                 selected.add(vertex)
 
-    # Clause-triangle repair is intentionally disabled for now so the drawing
-    # shows where raw connector propagation leaves the BTD graph.
-    repair_clause_triangles = False
-    if repair_clause_triangles:
+    if REPAIR_TRIANGLES:
         satisfied_by_clause = _btd_satisfied_connectors_by_clause(instance, graph)
 
         for label, clause_gadget in graph.clause_gadgets.items():
             satisfied_connectors = satisfied_by_clause[label]
-            if not satisfied_connectors:
-                selected.update(_btd_clause_corner_by_slot(clause_gadget).values())
-                continue
+            # no-instance already covered by connector bipartite propagation
+            if satisfied_connectors:
+                omitted_connector = satisfied_connectors[0]
+                omitted_corner = _btd_clause_corner_by_slot(clause_gadget)[
+                    omitted_connector.slot
+                ]
 
-            omitted_connector = satisfied_connectors[0]
-            omitted_corner = _btd_clause_corner_by_slot(clause_gadget)[
-                omitted_connector.slot
-            ]
-
-            for corner in _btd_clause_corner_by_slot(clause_gadget).values():
-                if corner != omitted_corner:
-                    selected.add(corner)
+                for corner in _btd_clause_corner_by_slot(clause_gadget).values():
+                    if corner != omitted_corner:
+                        selected.add(corner)
 
     certificate = tuple(sorted(selected, key=lambda point: (point.y, point.x)))
 

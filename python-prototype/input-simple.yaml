@@ -6,4 +6,4 @@ instance:
   negative: []
 
   satisfiable: true
-  certificate: [true, true, false]
+  certificate: [true, true, true]
